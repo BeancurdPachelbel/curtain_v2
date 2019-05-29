@@ -56,6 +56,9 @@ void app_main(void)
     //初始化驱动板的GPIO
     //step_gpio_init();
     
+    //PWM初始化
+    stepper_pwm_init();
+    
     //测试步进电机函数任务
     xTaskCreate(&stepper_test_task, "stepper_test_task", 4096, NULL, 8, NULL);
 }

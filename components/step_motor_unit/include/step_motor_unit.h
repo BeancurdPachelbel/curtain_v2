@@ -25,5 +25,8 @@ void stepper_test_task(void *arg);
 //PWM初始化
 void stepper_pwm_init();
 
+//PWM初始化
+void stepper_pwm_init();
+
 
 #endif

@@ -20,9 +20,8 @@
 #define LEDC_LS_CH3_GPIO       (5)
 #define LEDC_LS_CH3_CHANNEL    LEDC_CHANNEL_3
 
-#define LEDC_TEST_CH_NUM       (4)
-#define LEDC_TEST_DUTY         (4000)
-#define LEDC_TEST_FADE_TIME    (3000)
+#define LEDC_TEST_DUTY         (2000)
+#define LEDC_TEST_FADE_TIME    (10)
 
 //与l298n驱动板的连接(驱动板连接二相四线电机)
 /*
@@ -36,6 +35,10 @@
 #define IN3    	18			//GPIO18
 #define IN4    	5			//GPIO5
 
+ledc_timer_config_t ledc_timer;
+
+ledc_channel_config_t ledc_channel[4];
+
 //PWM初始化
 void stepper_pwm_init()
 {
@@ -45,12 +48,10 @@ void stepper_pwm_init()
      * Prepare and set configuration of timers
      * that will be used by LED Controller
      */
-    ledc_timer_config_t ledc_timer = {
-        .duty_resolution = LEDC_TIMER_13_BIT, // resolution of PWM duty
-        .freq_hz = 300,                      // frequency of PWM signal
-        .speed_mode = LEDC_HS_MODE,           // timer mode
-        .timer_num = LEDC_HS_TIMER            // timer index
-    };
+    ledc_timer.duty_resolution = LEDC_TIMER_13_BIT; // resolution of PWM duty
+    ledc_timer.freq_hz = 300;                     // frequency of PWM signal
+    ledc_timer.speed_mode = LEDC_HS_MODE;           // timer mode
+    ledc_timer.timer_num = LEDC_HS_TIMER;            // timer index
     // Set configuration of timer0 for high speed channels
     //等于设置了第一个timer，timer0
     ledc_timer_config(&ledc_timer);
@@ -77,39 +78,32 @@ void stepper_pwm_init()
      */
     //单独配置每一个ledc_channel_config_t的channel, duty, gpio_num, speed_num, timer_sel属性
     //一下声明为数组
-    ledc_channel_config_t ledc_channel[LEDC_TEST_CH_NUM] = {
-        {
-            .channel    = LEDC_HS_CH0_CHANNEL,
-            .duty       = 0,
-            .gpio_num   = LEDC_HS_CH0_GPIO,
-            .speed_mode = LEDC_HS_MODE,
-            .timer_sel  = LEDC_HS_TIMER
-        },
-        {
-            .channel    = LEDC_HS_CH1_CHANNEL,
-            .duty       = 0,
-            .gpio_num   = LEDC_HS_CH1_GPIO,
-            .speed_mode = LEDC_HS_MODE,
-            .timer_sel  = LEDC_HS_TIMER
-        },
-        {
-            .channel    = LEDC_LS_CH2_CHANNEL,
-            .duty       = 0,
-            .gpio_num   = LEDC_LS_CH2_GPIO,
-            .speed_mode = LEDC_LS_MODE,
-            .timer_sel  = LEDC_LS_TIMER
-        },
-        {
-            .channel    = LEDC_LS_CH3_CHANNEL,
-            .duty       = 0,
-            .gpio_num   = LEDC_LS_CH3_GPIO,
-            .speed_mode = LEDC_LS_MODE,
-            .timer_sel  = LEDC_LS_TIMER
-        },
-    };
+    ledc_channel[0].channel    = LEDC_HS_CH0_CHANNEL;
+    ledc_channel[0].duty       = 0;
+    ledc_channel[0].gpio_num   = LEDC_HS_CH0_GPIO;
+    ledc_channel[0].speed_mode = LEDC_HS_MODE;
+    ledc_channel[0].timer_sel  = LEDC_HS_TIMER;
+
+    ledc_channel[1].channel    = LEDC_HS_CH1_CHANNEL;
+    ledc_channel[1].duty       = 0;
+    ledc_channel[1].gpio_num   = LEDC_HS_CH1_GPIO;
+    ledc_channel[1].speed_mode = LEDC_HS_MODE;
+    ledc_channel[1].timer_sel  = LEDC_HS_TIMER;
+
+    ledc_channel[2].channel    = LEDC_LS_CH2_CHANNEL;
+    ledc_channel[2].duty       = 0;
+    ledc_channel[2].gpio_num   = LEDC_LS_CH2_GPIO;
+    ledc_channel[2].speed_mode = LEDC_LS_MODE;
+    ledc_channel[2].timer_sel  = LEDC_LS_TIMER;
+
+    ledc_channel[3].channel    = LEDC_LS_CH3_CHANNEL;
+    ledc_channel[3].duty       = 0;
+    ledc_channel[3].gpio_num   = LEDC_LS_CH3_GPIO;
+    ledc_channel[3].speed_mode = LEDC_LS_MODE;
+    ledc_channel[3].timer_sel  = LEDC_LS_TIMER;
 
     // Set LED Controller with previously prepared configuration
-    for (ch = 0; ch < LEDC_TEST_CH_NUM; ch++) {
+    for (ch = 0; ch < 4; ch++) {
         ledc_channel_config(&ledc_channel[ch]);
     }
 
@@ -117,13 +111,88 @@ void stepper_pwm_init()
     ledc_fade_func_install(0);
 }
 
+void set_stepper_pwm(int a, int b, int c, int d, int delay)
+{
+    if ( a == 1)
+    {
+        ledc_set_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel, LEDC_TEST_DUTY);
+    }
+    else
+    {
+        ledc_set_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel, 0);   
+    }
+    ledc_update_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel);
+    
+
+    if ( b == 1)
+    {
+        ledc_set_duty(ledc_channel[1].speed_mode, ledc_channel[1].channel, LEDC_TEST_DUTY);
+    }
+    else
+    {
+        ledc_set_duty(ledc_channel[1].speed_mode, ledc_channel[1].channel, 0);   
+    }
+    ledc_update_duty(ledc_channel[1].speed_mode, ledc_channel[1].channel);
+
+    if ( c == 1)
+    {
+        ledc_set_duty(ledc_channel[2].speed_mode, ledc_channel[2].channel, LEDC_TEST_DUTY);
+    }
+    else
+    {
+        ledc_set_duty(ledc_channel[2].speed_mode, ledc_channel[2].channel, 0);   
+    }
+    ledc_update_duty(ledc_channel[2].speed_mode, ledc_channel[2].channel);
+
+    if ( d == 1)
+    {
+        ledc_set_duty(ledc_channel[3].speed_mode, ledc_channel[3].channel, LEDC_TEST_DUTY);
+    }
+    else
+    {
+        ledc_set_duty(ledc_channel[3].speed_mode, ledc_channel[3].channel, 0);   
+    }
+    ledc_update_duty(ledc_channel[3].speed_mode, ledc_channel[3].channel);
+
+
+    vTaskDelay( delay / portTICK_PERIOD_MS);
+}
+
+void stepper_run(bool direction, int delay)
+{
+    if (direction)
+    {
+        set_stepper_pwm(1, 0, 0, 0, delay);
+        set_stepper_pwm(0, 0, 1, 0, delay);
+        set_stepper_pwm(0, 1, 0, 0, delay);
+        set_stepper_pwm(0, 0, 0, 1, delay);
+    }
+}
 
 //测试任务
 void stepper_test_task(void *arg)
 {
 	ESP_LOGI(TAG, "步进电机函数测试任务");
+    while(1)
+    {
+        stepper_run(true, 10);
+    }
+    // int duty = 0;
+    // while(1)
+    // {
+    //     if (duty == 4000)
+    //     {
+    //         duty = 0;
+    //     }
+    //     duty += 100;
+    //     ledc_set_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel, duty);  
+    //     ledc_update_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel); 
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
+    
 	vTaskDelete(NULL);
 }
+
 
 // while (1) {
 //         //duty值从0到LEDC_TEST_DUTY，以LED灯的角度看则是亮度为4000时
