@@ -20,6 +20,10 @@
 #define LEDC_LS_CH3_GPIO       (5)
 #define LEDC_LS_CH3_CHANNEL    LEDC_CHANNEL_3
 
+#define LEDC_TEST_CH_NUM       (4)
+#define LEDC_TEST_DUTY         (4000)
+#define LEDC_TEST_FADE_TIME    (3000)
+
 //与l298n驱动板的连接(驱动板连接二相四线电机)
 /*
 	IN1	--	D21
@@ -118,14 +122,6 @@ void stepper_pwm_init()
 void stepper_test_task(void *arg)
 {
 	ESP_LOGI(TAG, "步进电机函数测试任务");
-	ESP_LOGI(TAG, "低速运行");
-	//启动
-	stepper_run(10, 10);
-	ESP_LOGI(TAG, "加速运行");
-	while(1){
-		//加速
-		stepper_run(3, 10);
-	}
 	vTaskDelete(NULL);
 }
 
