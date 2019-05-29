@@ -19,8 +19,8 @@
 
 #define TIMER_DIVIDER         16  //  Hardware timer clock divider
 #define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to seconds
-#define TIMER_INTERVAL0_SEC   (3.4179) // sample test interval for the first timer
-#define TIMER_INTERVAL1_SEC   (5.78)   // sample test interval for the second timer
+#define TIMER_INTERVAL0_SEC   (1) // sample test interval for the first timer
+#define TIMER_INTERVAL1_SEC   (1)   // sample test interval for the second timer
 #define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
 #define TEST_WITH_RELOAD      1        // testing will be done with auto reload
 
@@ -159,12 +159,17 @@ void init_timer()
 {
     timer_queue = xQueueCreate(10, sizeof(timer_event_t));
     example_tg0_timer_init(TIMER_0, TEST_WITHOUT_RELOAD, TIMER_INTERVAL0_SEC);
-    example_tg0_timer_init(TIMER_1, TEST_WITH_RELOAD,    TIMER_INTERVAL1_SEC);
+    //example_tg0_timer_init(TIMER_1, TEST_WITH_RELOAD,    TIMER_INTERVAL1_SEC);
     xTaskCreate(timer_example_evt_task, "timer_evt_task", 2048, NULL, 5, NULL);
 }
 
-//查询定时器reload与否的区别
-//reload与否有可能是不累计时间误差
+//定时器reload就是一次中断的时间精度
+//定时器没有reload就是累计时间
+//reload等同于是否累计时间
+
+//定时器设置不需要reload（累计时间），如果时间累计达到步进电机的时间间隔，则reload
+//中断里统计时间总和，如果时间总和为步进电机的时间间隔，则执行一次步进
+//每隔1s打印一次
 
 //测试任务
 void stepper_test_task(void *arg)
