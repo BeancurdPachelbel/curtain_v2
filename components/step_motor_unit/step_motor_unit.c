@@ -3,25 +3,6 @@
 
 #define TAG 		"STEPPER"
 
-//高速模式定时器、高速模式
-#define LEDC_HS_TIMER          LEDC_TIMER_0
-#define LEDC_HS_MODE           LEDC_HIGH_SPEED_MODE
-#define LEDC_HS_CH0_GPIO       (21)
-//单独的channel
-#define LEDC_HS_CH0_CHANNEL    LEDC_CHANNEL_0
-#define LEDC_HS_CH1_GPIO       (19)
-#define LEDC_HS_CH1_CHANNEL    LEDC_CHANNEL_1
-
-//低速定时器、低速模式
-#define LEDC_LS_TIMER          LEDC_TIMER_1
-#define LEDC_LS_MODE           LEDC_LOW_SPEED_MODE
-#define LEDC_LS_CH2_GPIO       (18)
-#define LEDC_LS_CH2_CHANNEL    LEDC_CHANNEL_2
-#define LEDC_LS_CH3_GPIO       (5)
-#define LEDC_LS_CH3_CHANNEL    LEDC_CHANNEL_3
-
-#define LEDC_TEST_DUTY         (2000)
-#define LEDC_TEST_FADE_TIME    (10)
 
 //与l298n驱动板的连接(驱动板连接二相四线电机)
 /*
@@ -35,189 +16,164 @@
 #define IN3    	18			//GPIO18
 #define IN4    	5			//GPIO5
 
-ledc_timer_config_t ledc_timer;
 
-ledc_channel_config_t ledc_channel[4];
+#define TIMER_DIVIDER         16  //  Hardware timer clock divider
+#define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to seconds
+#define TIMER_INTERVAL0_SEC   (3.4179) // sample test interval for the first timer
+#define TIMER_INTERVAL1_SEC   (5.78)   // sample test interval for the second timer
+#define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
+#define TEST_WITH_RELOAD      1        // testing will be done with auto reload
 
-//PWM初始化
-void stepper_pwm_init()
+/*
+ * A sample structure to pass events
+ * from the timer interrupt handler to the main program.
+ */
+typedef struct {
+    int type;  // the type of timer's event
+    int timer_group;
+    int timer_idx;
+    uint64_t timer_counter_value;
+} timer_event_t;
+
+xQueueHandle timer_queue;
+
+/*
+ * A simple helper function to print the raw timer counter value
+ * and the counter value converted to seconds
+ */
+//打印函数,打印计数器值以及时间（经过转换的时间）
+static void inline print_timer_counter(uint64_t counter_value)
 {
-    int ch;
-
-    /*
-     * Prepare and set configuration of timers
-     * that will be used by LED Controller
-     */
-    ledc_timer.duty_resolution = LEDC_TIMER_13_BIT; // resolution of PWM duty
-    ledc_timer.freq_hz = 300;                     // frequency of PWM signal
-    ledc_timer.speed_mode = LEDC_HS_MODE;           // timer mode
-    ledc_timer.timer_num = LEDC_HS_TIMER;            // timer index
-    // Set configuration of timer0 for high speed channels
-    //等于设置了第一个timer，timer0
-    ledc_timer_config(&ledc_timer);
-
-    // Prepare and set configuration of timer1 for low speed channels
-    //修改速度模式为低速模式以及定时器类型为低速定时器，设置为timer1
-    //也可以通过ledc_timer_config_t结构体创建另外一个timer对象
-    ledc_timer.speed_mode = LEDC_LS_MODE;
-    ledc_timer.timer_num = LEDC_LS_TIMER;
-    ledc_timer_config(&ledc_timer);
-
-    /*
-     * Prepare individual configuration
-     * for each channel of LED Controller
-     * by selecting:
-     * - controller's channel number
-     * - output duty cycle, set initially to 0
-     * - GPIO number where LED is connected to
-     * - speed mode, either high or low
-     * - timer servicing selected channel
-     *   Note: if different channels use one timer,
-     *         then frequency and bit_num of these channels
-     *         will be the same
-     */
-    //单独配置每一个ledc_channel_config_t的channel, duty, gpio_num, speed_num, timer_sel属性
-    //一下声明为数组
-    ledc_channel[0].channel    = LEDC_HS_CH0_CHANNEL;
-    ledc_channel[0].duty       = 0;
-    ledc_channel[0].gpio_num   = LEDC_HS_CH0_GPIO;
-    ledc_channel[0].speed_mode = LEDC_HS_MODE;
-    ledc_channel[0].timer_sel  = LEDC_HS_TIMER;
-
-    ledc_channel[1].channel    = LEDC_HS_CH1_CHANNEL;
-    ledc_channel[1].duty       = 0;
-    ledc_channel[1].gpio_num   = LEDC_HS_CH1_GPIO;
-    ledc_channel[1].speed_mode = LEDC_HS_MODE;
-    ledc_channel[1].timer_sel  = LEDC_HS_TIMER;
-
-    ledc_channel[2].channel    = LEDC_LS_CH2_CHANNEL;
-    ledc_channel[2].duty       = 0;
-    ledc_channel[2].gpio_num   = LEDC_LS_CH2_GPIO;
-    ledc_channel[2].speed_mode = LEDC_LS_MODE;
-    ledc_channel[2].timer_sel  = LEDC_LS_TIMER;
-
-    ledc_channel[3].channel    = LEDC_LS_CH3_CHANNEL;
-    ledc_channel[3].duty       = 0;
-    ledc_channel[3].gpio_num   = LEDC_LS_CH3_GPIO;
-    ledc_channel[3].speed_mode = LEDC_LS_MODE;
-    ledc_channel[3].timer_sel  = LEDC_LS_TIMER;
-
-    // Set LED Controller with previously prepared configuration
-    for (ch = 0; ch < 4; ch++) {
-        ledc_channel_config(&ledc_channel[ch]);
-    }
-
-    // Initialize fade service.
-    ledc_fade_func_install(0);
+    printf("Counter: 0x%08x%08x\n", (uint32_t) (counter_value >> 32), (uint32_t) (counter_value));
+    printf("Time   : %.8f s\n", (double) counter_value / TIMER_SCALE);
 }
 
-void set_stepper_pwm(int a, int b, int c, int d, int delay)
+//定时器中断函数
+void IRAM_ATTR timer_group0_isr(void *para)
 {
-    if ( a == 1)
-    {
-        ledc_set_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel, LEDC_TEST_DUTY);
-    }
-    else
-    {
-        ledc_set_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel, 0);   
-    }
-    ledc_update_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel);
-    
+    int timer_idx = (int) para;
 
-    if ( b == 1)
-    {
-        ledc_set_duty(ledc_channel[1].speed_mode, ledc_channel[1].channel, LEDC_TEST_DUTY);
-    }
-    else
-    {
-        ledc_set_duty(ledc_channel[1].speed_mode, ledc_channel[1].channel, 0);   
-    }
-    ledc_update_duty(ledc_channel[1].speed_mode, ledc_channel[1].channel);
+    //从定时器报告的中断中，获取中断状态以及计数器值
+    uint32_t intr_status = TIMERG0.int_st_timers.val;
+    TIMERG0.hw_timer[timer_idx].update = 1;
+    uint64_t timer_counter_value = ((uint64_t) TIMERG0.hw_timer[timer_idx].cnt_high) << 32 | TIMERG0.hw_timer[timer_idx].cnt_low;
 
-    if ( c == 1)
-    {
-        ledc_set_duty(ledc_channel[2].speed_mode, ledc_channel[2].channel, LEDC_TEST_DUTY);
-    }
-    else
-    {
-        ledc_set_duty(ledc_channel[2].speed_mode, ledc_channel[2].channel, 0);   
-    }
-    ledc_update_duty(ledc_channel[2].speed_mode, ledc_channel[2].channel);
+    //准备基础的事件数据，这些数据被发回给任务函数
+    timer_event_t evt;
+    evt.timer_group = 0;
+    evt.timer_idx = timer_idx;
+    evt.timer_counter_value = timer_counter_value;
 
-    if ( d == 1)
-    {
-        ledc_set_duty(ledc_channel[3].speed_mode, ledc_channel[3].channel, LEDC_TEST_DUTY);
+    //为定时器（没有reload的情况下）清除中断以及更新警报时间
+    if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_0) {
+        evt.type = TEST_WITHOUT_RELOAD;
+        TIMERG0.int_clr_timers.t0 = 1;
+        timer_counter_value += (uint64_t) (TIMER_INTERVAL0_SEC * TIMER_SCALE);
+        TIMERG0.hw_timer[timer_idx].alarm_high = (uint32_t) (timer_counter_value >> 32);
+        TIMERG0.hw_timer[timer_idx].alarm_low = (uint32_t) timer_counter_value;
+    } else if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_1) {
+        evt.type = TEST_WITH_RELOAD;
+        TIMERG0.int_clr_timers.t1 = 1;
+    } else {
+        evt.type = -1; // not supported even type
     }
-    else
-    {
-        ledc_set_duty(ledc_channel[3].speed_mode, ledc_channel[3].channel, 0);   
-    }
-    ledc_update_duty(ledc_channel[3].speed_mode, ledc_channel[3].channel);
 
+    //在警报触发之后，需要重新启用它，以便下次能够再触发
+    TIMERG0.hw_timer[timer_idx].config.alarm_en = TIMER_ALARM_EN;
 
-    vTaskDelay( delay / portTICK_PERIOD_MS);
+    //将事件数据发送给任务函数
+    xQueueSendFromISR(timer_queue, &evt, NULL);
 }
 
-void stepper_run(bool direction, int delay)
+/*
+ * Initialize selected timer of the timer group 0
+ *
+ * timer_idx - the timer number to initialize
+ * auto_reload - should the timer auto reload on alarm?
+ * timer_interval_sec - the interval of alarm to set
+ */
+//初始化定时器(隶属于定时器组0)
+static void example_tg0_timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
 {
-    if (direction)
-    {
-        set_stepper_pwm(1, 0, 0, 0, delay);
-        set_stepper_pwm(0, 0, 1, 0, delay);
-        set_stepper_pwm(0, 1, 0, 0, delay);
-        set_stepper_pwm(0, 0, 0, 1, delay);
+    /* Select and initialize basic parameters of the timer */
+    //初始化定时器参数
+    timer_config_t config;
+    config.divider = TIMER_DIVIDER;
+    config.counter_dir = TIMER_COUNT_UP;
+    config.counter_en = TIMER_PAUSE;
+    config.alarm_en = TIMER_ALARM_EN;
+    config.intr_type = TIMER_INTR_LEVEL;
+    config.auto_reload = auto_reload;
+    timer_init(TIMER_GROUP_0, timer_idx, &config);
+
+    /* Timer's counter will initially start from value below.
+       Also, if auto_reload is set, this value will be automatically reload on alarm */
+    //定时器的计数器将会从以下的数值开始计数，同时，如果auto_reload设置了，这个值会重新在警报上装载
+    timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
+
+    /* Configure the alarm value and the interrupt on alarm. */
+    //配置警报值以及警报的中断
+    timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
+    timer_enable_intr(TIMER_GROUP_0, timer_idx);
+    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
+
+    timer_start(TIMER_GROUP_0, timer_idx);
+}
+
+/*
+ * The main task of this example program
+ */
+//定时器测试任务
+static void timer_example_evt_task(void *arg)
+{
+    while (1) {
+        timer_event_t evt;
+        //队列接收time_event结构体
+        xQueueReceive(timer_queue, &evt, portMAX_DELAY);
+
+        /* Print information that the timer reported an event */
+        //打印定时器触发的数据
+        if (evt.type == TEST_WITHOUT_RELOAD) {
+            printf("\n    Example timer without reload\n");
+        } else if (evt.type == TEST_WITH_RELOAD) {
+            printf("\n    Example timer with auto reload\n");
+        } else {
+            printf("\n    UNKNOWN EVENT TYPE\n");
+        }
+        printf("Group[%d], timer[%d] alarm event\n", evt.timer_group, evt.timer_idx);
+
+        /* Print the timer values passed by event */
+        printf("------- EVENT TIME --------\n");
+        print_timer_counter(evt.timer_counter_value);
+
+        /* Print the timer values as visible by this task */
+        printf("-------- TASK TIME --------\n");
+        uint64_t task_counter_value;
+        timer_get_counter_value(evt.timer_group, evt.timer_idx, &task_counter_value);
+        print_timer_counter(task_counter_value);
     }
 }
+
+//初始化定时器
+void init_timer()
+{
+    timer_queue = xQueueCreate(10, sizeof(timer_event_t));
+    example_tg0_timer_init(TIMER_0, TEST_WITHOUT_RELOAD, TIMER_INTERVAL0_SEC);
+    example_tg0_timer_init(TIMER_1, TEST_WITH_RELOAD,    TIMER_INTERVAL1_SEC);
+    xTaskCreate(timer_example_evt_task, "timer_evt_task", 2048, NULL, 5, NULL);
+}
+
+//查询定时器reload与否的区别
+//reload与否有可能是不累计时间误差
 
 //测试任务
 void stepper_test_task(void *arg)
 {
 	ESP_LOGI(TAG, "步进电机函数测试任务");
-    while(1)
-    {
-        stepper_run(true, 10);
-    }
-    // int duty = 0;
-    // while(1)
-    // {
-    //     if (duty == 4000)
-    //     {
-    //         duty = 0;
-    //     }
-    //     duty += 100;
-    //     ledc_set_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel, duty);  
-    //     ledc_update_duty(ledc_channel[0].speed_mode, ledc_channel[0].channel); 
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
     
 	vTaskDelete(NULL);
 }
 
-
-// while (1) {
-//         //duty值从0到LEDC_TEST_DUTY，以LED灯的角度看则是亮度为4000时
-//         //printf("1. LEDC fade up to duty = %d\n", LEDC_TEST_DUTY);
-//         printf("1. Led灯用%dms把亮度值从当前状态渐变到%d\n",LEDC_TEST_FADE_TIME,LEDC_TEST_DUTY);
-//         for (ch = 0; ch < LEDC_TEST_CH_NUM; ch++) {
-//             //设置渐变的时间
-//             ledc_set_fade_with_time(ledc_channel[ch].speed_mode,
-//                     ledc_channel[ch].channel, LEDC_TEST_DUTY, LEDC_TEST_FADE_TIME);
-//             //开始渐变，异步
-//             ledc_fade_start(ledc_channel[ch].speed_mode,
-//                     ledc_channel[ch].channel, LEDC_FADE_NO_WAIT);
-//         }
-//         //主线程进行ms级延时，延时LEDC_TEST_FADE_TIME，此延时为主线程阻塞
-//         vTaskDelay(LEDC_TEST_FADE_TIME / portTICK_PERIOD_MS);
-
-//         //duty值从LEDC_TEST_DUTY到0
-//         //printf("2. LEDC fade down to duty = 0\n");
-//         printf("2. Led灯用%dms把亮度值从当前状态渐变到0\n",LEDC_TEST_FADE_TIME);
-//         for (ch = 0; ch < LEDC_TEST_CH_NUM; ch++) {
-//             ledc_set_fade_with_time(ledc_channel[ch].speed_mode,
-//                     ledc_channel[ch].channel, 0, LEDC_TEST_FADE_TIME);
-//             ledc_fade_start(ledc_channel[ch].speed_mode,
-//                     ledc_channel[ch].channel, LEDC_FADE_NO_WAIT);
-//         }
 
 //顺时针旋转
 //参考正转表{0x05,0x01,0x09,0x08,0x0A,0x02,0x06,0x04}
