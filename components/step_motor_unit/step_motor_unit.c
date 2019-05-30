@@ -156,6 +156,7 @@ void set_stepper_pwm(int a, int b, int c, int d, int delay)
 
 
     vTaskDelay( delay / portTICK_PERIOD_MS);
+    //vTaskDelay( delay);
 }
 
 void stepper_run(bool direction, int delay)
@@ -175,7 +176,7 @@ void stepper_test_task(void *arg)
 	ESP_LOGI(TAG, "步进电机函数测试任务");
     while(1)
     {
-        stepper_run(true, 10);
+        stepper_run(true, 100);
     }
     // int duty = 0;
     // while(1)
