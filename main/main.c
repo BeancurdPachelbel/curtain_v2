@@ -55,6 +55,9 @@ void app_main(void)
     
     //初始化驱动板的GPIO
     //step_gpio_init();
+    //
+    //初始化GPIO
+    step_gpio_init();
     
     //初始化定时器
     init_timer();
