@@ -154,6 +154,18 @@ static void timer_example_evt_task(void *arg)
     }
 }
 
+//暂停以及启动定时器
+void pause_timer_task(void *arg)
+{
+    while(1)
+    {
+        //暂停定时器
+        timer_pause(TIMER_GROUP_0, TIMER_0);
+        vTaskDelay( 2000 );
+    }
+    vTaskDelete(NULL);
+}
+
 //初始化定时器
 void init_timer()
 {
@@ -169,7 +181,9 @@ void init_timer()
 
 //定时器设置不需要reload（累计时间），如果时间累计达到步进电机的时间间隔，则reload
 //中断里统计时间总和，如果时间总和为步进电机的时间间隔，则执行一次步进
-//每隔1s打印一次
+//通过队列发送中断的执行情况
+//
+//定时器暂停以及重新启动
 
 //测试任务
 void stepper_test_task(void *arg)

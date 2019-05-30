@@ -3,7 +3,7 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := voice_recognition
+PROJECT_NAME := curtain
 
 include $(IDF_PATH)/make/project.mk
 
