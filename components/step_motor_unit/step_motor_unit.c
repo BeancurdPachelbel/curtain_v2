@@ -48,6 +48,37 @@ void writeStep(int a, int b, int c, int d, int delay)
     vTaskDelay( delay / portTICK_RATE_MS);
 }
 
+void write_step(int a, int b, int c, int d) 
+{
+    gpio_set_level(IN1, a);
+    gpio_set_level(IN2, b);
+    gpio_set_level(IN3, c);
+    gpio_set_level(IN4, d);
+    //延时越小速度越快，速度低于10ms电机不转且啸叫
+    //vTaskDelay( delay / portTICK_RATE_MS);
+}
+
+void write_step_by_phase(int phase)
+{
+    switch(phase)
+    {
+        case 0:
+            write_step(1, 0, 0, 0);
+            break;
+        case 1:
+            write_step(0, 0, 1, 0);
+            break;
+        case 2:            
+            write_step(0, 1, 0, 0);
+            break;
+        case 3:
+            write_step(0, 0, 0, 1); 
+            break;
+        default:
+            break;
+    }
+}
+
 /*
  * A sample structure to pass events
  * from the timer interrupt handler to the main program.
@@ -61,7 +92,8 @@ typedef struct {
 
 xQueueHandle timer_queue;
 
-volatile int time_count = 0;
+int time_count = 0;
+int phase_count = 0;
 
 /*
  * A simple helper function to print the raw timer counter value
@@ -90,6 +122,17 @@ void IRAM_ATTR timer_group0_isr(void *para)
     evt.timer_idx = timer_idx;
     evt.timer_counter_value = timer_counter_value;
 
+    time_count++;
+    if (time_count == 100)
+    { 
+        time_count = 0;
+        if (phase_count == 4)
+        {
+            phase_count = 0;
+        }
+        write_step_by_phase(phase_count);
+        phase_count++;
+    }
 
     //为定时器（没有reload的情况下）清除中断以及更新警报时间
     if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_0) {
@@ -158,17 +201,17 @@ static void timer_example_evt_task(void *arg)
         timer_event_t evt;
         //队列接收time_event结构体
         xQueueReceive(timer_queue, &evt, portMAX_DELAY);
-        writeStep(1, 0, 0, 0, delay);
-        writeStep(0, 0, 1, 0, delay);
-        writeStep(0, 1, 0, 0, delay);
-        writeStep(0, 0, 0, 1, delay);
-        //ESP_LOGI(TAG, ".");
+        // writeStep(1, 0, 0, 0, delay);
+        // writeStep(0, 0, 1, 0, delay);
+        // writeStep(0, 1, 0, 0, delay);
+        // writeStep(0, 0, 0, 1, delay);
+        //ESP_LOGI(TAG, "time_count:%d", time_count);
         // time_count++;
-        // if ( time_count == 1000 )
-        // {
-        //     time_count = 0;
-        //     ESP_LOGI(TAG, "1s时间到");
-        // }
+        if ( time_count == 1000 )
+        {
+            time_count = 0;
+            ESP_LOGI(TAG, "1s时间到");
+        }
         //print_timer_counter(evt.timer_counter_value);
 
         // /* Print information that the timer reported an event */
@@ -221,11 +264,11 @@ void init_timer()
     timer_queue = xQueueCreate(1000, sizeof(timer_event_t));
     example_tg0_timer_init(TIMER_0, TEST_WITHOUT_RELOAD, TIMER_INTERVAL0_SEC);
     //暂停计时器
-    timer_pause(TIMER_GROUP_0, TIMER_0);
+    //timer_pause(TIMER_GROUP_0, TIMER_0);
     //example_tg0_timer_init(TIMER_1, TEST_WITH_RELOAD,    TIMER_INTERVAL1_SEC);
-    //xTaskCreate(timer_example_evt_task, "timer_evt_task", 2048, NULL, 5, NULL);
+    xTaskCreate(timer_example_evt_task, "timer_evt_task", 2048, NULL, 5, NULL);
     //xTaskCreate(pause_timer_task, "pause_timer_task", 1024*4, NULL, 6, NULL);
-    xTaskCreate(stepper_test_task, "stepper_test_task", 1024*4, NULL, 6, NULL);
+    //xTaskCreate(stepper_test_task, "stepper_test_task", 1024*4, NULL, 6, NULL);
 }
 
 //定时器reload就是一次中断的时间精度
