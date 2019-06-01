@@ -123,7 +123,7 @@ void IRAM_ATTR timer_group0_isr(void *para)
     evt.timer_counter_value = timer_counter_value;
 
     time_count++;
-    if (time_count == 100)
+    if (time_count == 3)
     { 
         time_count = 0;
         if (phase_count == 4)
@@ -155,17 +155,9 @@ void IRAM_ATTR timer_group0_isr(void *para)
     xQueueSendFromISR(timer_queue, &evt, NULL);
 }
 
-/*
- * Initialize selected timer of the timer group 0
- *
- * timer_idx - the timer number to initialize
- * auto_reload - should the timer auto reload on alarm?
- * timer_interval_sec - the interval of alarm to set
- */
 //初始化定时器(隶属于定时器组0)
 static void example_tg0_timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
 {
-    /* Select and initialize basic parameters of the timer */
     //初始化定时器参数
     timer_config_t config;
     config.divider = TIMER_DIVIDER;
@@ -176,12 +168,9 @@ static void example_tg0_timer_init(int timer_idx, bool auto_reload, double timer
     config.auto_reload = auto_reload;
     timer_init(TIMER_GROUP_0, timer_idx, &config);
 
-    /* Timer's counter will initially start from value below.
-       Also, if auto_reload is set, this value will be automatically reload on alarm */
     //定时器的计数器将会从以下的数值开始计数，同时，如果auto_reload设置了，这个值会重新在警报上装载
     timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
 
-    /* Configure the alarm value and the interrupt on alarm. */
     //配置警报值以及警报的中断
     timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
     timer_enable_intr(TIMER_GROUP_0, timer_idx);
@@ -190,9 +179,6 @@ static void example_tg0_timer_init(int timer_idx, bool auto_reload, double timer
     timer_start(TIMER_GROUP_0, timer_idx);
 }
 
-/*
- * The main task of this example program
- */
 //定时器测试任务
 static void timer_example_evt_task(void *arg)
 {
