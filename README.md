@@ -8,4 +8,13 @@ The range of the motor's speed is from 30RPM to 150RPM, converts into frequency 
 
 ## Adding goal
 ### Goal 1: The markdown's grammar learning plan will be arranged in few days
-### Goal 2: The curtain project will be optimized in relatively reasonble architecture and better comment
+1.Learn the markdown's grammar
+2.Do some pratice
+3.make notes about markdown's grammar in EVERNOTE
+
+### Goal 2: Redesign the project's achitecture
+1.List the functions that needs to be implemented.
+2.According to the functions' list, creat the relatively reasonable module
+3.Delete redundant and unuseful code
+4.Optimize the annotation
+
