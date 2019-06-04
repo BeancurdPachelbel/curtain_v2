@@ -14,12 +14,12 @@ The range of the motor's speed is from 30RPM to 150RPM, converts into frequency 
 
 ### Goal 2: Redesign the project's achitecture
 1. List the functions that needs to be implemented.
-> * Communicate with server by mqtt, thus the cummunitaion's link is recommended as follows:
-    	- SmartConfig
-    	- WIFI
-    	- MQTT
-> * Stepper motor rotates in the direction of clockwise and counterclockwise
-> * Read the main circuit's current from the module INA226 in short delay(the unit is ms)
+	> * Communicate with server by mqtt, thus the cummunitaion's link is recommended as follows:
+	    	- SmartConfig
+	    	- WIFI
+	    	- MQTT
+	> * Stepper motor rotates in the direction of clockwise and counterclockwise
+	> * Read the main circuit's current from the module INA226 in short delay(the unit is ms)
 2. According to the functions' list, creat the relatively reasonable module
 3. Delete redundant and unuseful code
 4. Optimize the annotation
