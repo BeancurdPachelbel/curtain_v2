@@ -5,26 +5,42 @@ The stepper motor is controled by the timer's interrupt.
 
 The range of the motor's speed is from 30RPM to 150RPM, converts into frequency is from 100Hz to 500Hz, which means each pulse that the ESP32 generate will be delay 2ms until next pulse is generated.
 
+## About the Project
+### Some of the Project's introduction
+### A Gif
+### A Video Link
 
-## Goal 1: The markdown's grammar learning plan will be arranged in few days
-1. Learn the markdown's grammar
-2. Do some pratice
-3. make notes about markdown's grammar in EVERNOTE
+## Getting Started
+### Hardware Required Material
+### Hardware Schematic
+### Software Environment
+### Project Installing
+
+## Usage
+
+## Achitecture
+
+## Contact
+
+## License
+
 
 ## Goal 2: Redesign the project's achitecture
 ### List the functions that needs to be implemented.
 
 - Communicate with server by mqtt, thus the cummunitaion's link is recommended as follows: 
-	- [ ] SmartConfig(if you want to config wifi by smartconfig)
-	- [x] **WIFI**
-	- [x] **MQTT**
+	- [ ] SmartConfig(If you want to config wifi by smartconfig)
+	- [x] **WIFI**(required)
+	- [x] **MQTT**(required)
 
 - Stepper motor rotates in the direction of clockwise and counterclockwise
 - Read the main circuit's current from the module INA226 in short delay(the unit is ms)
 
 ### According to the functions' list, creat the relatively reasonable module
-- wifi_unit(including smartconfig and wifi)
-- 
+- wifi_unit
+- mqtt_unit
+- stepper_unit
+- main
 
 ### Delete redundant and unuseful code
 ### Optimize the functions and annotations
