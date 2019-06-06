@@ -26,7 +26,7 @@ The range of the motor's speed is from 30RPM to 150RPM, converts into frequency 
 
 ## FAQ
 ### What's relationship between the rotate speed and the frequency of the stepper motor ?
-The formular is as follow: $$\frac{(\frac{360 * Divider}{StepAngle})\times RPM}{60} = Frequency$$
+The formular is as follow: ![](http://latex.codecogs.com/gif.latex?\\frac{(\frac{360*Divider}{StepAngle})\\times RPM}{60} = Frequency
 RPM means Revolutions Per Minute.
 The unit of Frequency is Hz.
 
