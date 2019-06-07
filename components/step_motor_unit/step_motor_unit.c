@@ -27,13 +27,68 @@
 
 //通过定时器的中断向步进电机发送脉冲
 //中断函数里需要判断旋转的方向以及步进数
+//初始化定时器
 /**
  * 步进电机旋转任务，通过队列接收旋转结构体（包含旋转方向，步进数）
  * 开启定时器，旋转完成后，关闭定时器
+ * 开启定时器即开始旋转，开启定时器的条件为接收到旋转指令或者电流激增（手拉电流）
  * 关闭定时器即停止旋转，关闭定时器条件为旋转结束或者发生堵转事件
  * 堵转判断条件为电流是否激增，从INA226实时读取电流
  */
 
+int direction = 0;
+int step_count = 0;
+int temp_step_count = 0;
+bool is_runnable = false;
+
+//定时器中断
+void IRAM_ATTR timer_isr(void *arg)
+{
+    time_count++;
+    //因为中断的时间精度设置为1ms，即此中断每1ms被调用一次
+    //每次脉冲延时2ms，也就是频率为500Hz，转速约150RPM
+    if (time_count == 2)
+    { 
+        time_count = 0;
+        //完成一个步进
+        if (phase_count == 4)
+        {
+            //当前步进数
+            temp_step_count++;
+            //判断当前步进数是否已经达到步进总数
+            if ( temp_step_count == step_count)
+            {
+                temp_step_count = 0;
+                //向队列发送已完成步进的值
+                //同时禁用旋转
+            }
+            phase_count = 0;
+        }
+        //确保步进电机可以马上停止
+        if (is_runnable)
+        {
+            write_step_by_direction_and_phase(phase_count);
+            phase_count++;
+        }
+    }
+
+    int timer_idx = (int) arg;
+    //从定时器报告的中断中，获取中断状态以及计数器值
+    //uint32_t intr_status = TIMERG0.int_st_timers.val;
+    TIMERG0.hw_timer[timer_idx].update = 1;
+    uint64_t timer_counter_value = ((uint64_t) TIMERG0.hw_timer[timer_idx].cnt_high) << 32 | TIMERG0.hw_timer[timer_idx].cnt_low;
+    //为定时器（没有reload的情况下）清除中断以及更新警报时间
+    //定时器Reload就是不累计时间，不Reload就是累计时间
+    //比如设定时间为1s，则Reload的定时器每次到了1s之后就会重新开始计时，不Reload的定时器则会一直计时下去
+    //Reload: 0s, 1s, 0s, 1s, 0s, 1s, ...
+    //Without Reload: 0s, 1s, 2s, 3s, ...
+    TIMERG0.int_clr_timers.t0 = 1;
+    timer_counter_value += (uint64_t) (TIMER_INTERVAL0_SEC * TIMER_SCALE);
+    TIMERG0.hw_timer[timer_idx].alarm_high = (uint32_t) (timer_counter_value >> 32);
+    TIMERG0.hw_timer[timer_idx].alarm_low = (uint32_t) timer_counter_value;
+    //在警报触发之后，需要重新启用它，以便下次能够再触发
+    TIMERG0.hw_timer[timer_idx].config.alarm_en = TIMER_ALARM_EN;
+}
 
 //初始化GPIO
 void step_gpio_init()
@@ -56,8 +111,27 @@ void write_step(int a, int b, int c, int d)
     gpio_set_level(IN4, d);
 }
 
+/**
+ * 根据相序设置GPIO
+ * @param direction 旋转的方向，1为正转，0为反转
+ * @param phase     相序拍数
+ */
+void write_step_by_direction_and_phase(int direction, int phase)
+{
+    //正转相序
+    if ( direction == 1)
+    {
+        write_step_by_phase_clockwise(phase);
+    }
+    //反转相序
+    else
+    {
+        write_step_by_phase_counterclockwise(phase);
+    }
+}
+
 //根据相序设置GPIO，正转
-void write_step_by_phase(int phase)
+void write_step_by_phase_clockwise(int phase)
 {
     switch(phase)
     {
@@ -72,6 +146,28 @@ void write_step_by_phase(int phase)
             break;
         case 3:
             write_step(0, 0, 0, 1); 
+            break;
+        default:
+            break;
+    }
+}
+
+//根据相序设置GPIO，反转
+void write_step_by_phase_counterclockwise(int phase)
+{
+    switch(phase)
+    {
+        case 0:
+            write_step(0, 0, 0, 1);
+            break;
+        case 1:
+            write_step(0, 1, 0, 0);
+            break;
+        case 2:            
+            write_step(0, 0, 1, 0);
+            break;
+        case 3:
+            write_step(1, 0, 0, 0); 
             break;
         default:
             break;
