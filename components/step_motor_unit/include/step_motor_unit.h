@@ -5,7 +5,6 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 #include "driver/gpio.h"
-//#include "rom/ets_sys.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"

@@ -25,6 +25,15 @@
 #define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
 #define TEST_WITH_RELOAD      1        // testing will be done with auto reload
 
+//通过定时器的中断向步进电机发送脉冲
+//中断函数里需要判断旋转的方向以及步进数
+/**
+ * 步进电机旋转任务，通过队列接收旋转结构体（包含旋转方向，步进数）
+ * 开启定时器，旋转完成后，关闭定时器
+ * 关闭定时器即停止旋转，关闭定时器条件为旋转结束或者发生堵转事件
+ * 堵转判断条件为电流是否激增，从INA226实时读取电流
+ */
+
 
 //初始化GPIO
 void step_gpio_init()
@@ -38,26 +47,16 @@ void step_gpio_init()
     gpio_config(&io_conf);
 }
 
-void writeStep(int a, int b, int c, int d, int delay) 
-{
-    gpio_set_level(IN1, a);
-    gpio_set_level(IN2, b);
-    gpio_set_level(IN3, c);
-    gpio_set_level(IN4, d);
-    //延时越小速度越快，速度低于10ms电机不转且啸叫
-    vTaskDelay( delay / portTICK_RATE_MS);
-}
-
+//设置GPIO
 void write_step(int a, int b, int c, int d) 
 {
     gpio_set_level(IN1, a);
     gpio_set_level(IN2, b);
     gpio_set_level(IN3, c);
     gpio_set_level(IN4, d);
-    //延时越小速度越快，速度低于10ms电机不转且啸叫
-    //vTaskDelay( delay / portTICK_RATE_MS);
 }
 
+//根据相序设置GPIO，正转
 void write_step_by_phase(int phase)
 {
     switch(phase)
@@ -301,9 +300,6 @@ void stepper_run(int direction, int count, int delay)
     //暂停计时器
     timer_pause(TIMER_GROUP_0, TIMER_0);
 }
-
-//步进电机转速控制在90RPM，则脉冲信号的频率在300HZ，即延时3ms左右
-//转速75RPM，频率250HZ，延时4ms
 
 //测试任务
 void stepper_test_task(void *arg)
