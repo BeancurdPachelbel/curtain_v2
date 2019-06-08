@@ -36,20 +36,39 @@
  * 堵转判断条件为电流是否激增，从INA226实时读取电流
  */
 
+//定时器累加
+int timer_count = 0;
+//相序累加
+int phase_count = 0;
+
+//旋转方向
 int direction = 0;
+//总步进个数
 int step_count = 0;
+//步进个数累加
 int temp_step_count = 0;
+//是否允许旋转
 bool is_runnable = false;
+
+//步进结构体
+typedef struct
+{
+    int direction;
+    int step_count;
+}stepper_t;
+
+//定时器队列，发送或接收步进结构体，控制定时器的开关(电机启动停止)
+xQueueHandle timer_queue;
 
 //定时器中断
 void IRAM_ATTR timer_isr(void *arg)
 {
-    time_count++;
+    timer_count++;
     //因为中断的时间精度设置为1ms，即此中断每1ms被调用一次
     //每次脉冲延时2ms，也就是频率为500Hz，转速约150RPM
-    if (time_count == 2)
+    if (timer_count == 2)
     { 
-        time_count = 0;
+        timer_count = 0;
         //完成一个步进
         if (phase_count == 4)
         {
@@ -61,6 +80,7 @@ void IRAM_ATTR timer_isr(void *arg)
                 temp_step_count = 0;
                 //向队列发送已完成步进的值
                 //同时禁用旋转
+                is_runnable = false;
             }
             phase_count = 0;
         }
@@ -88,6 +108,48 @@ void IRAM_ATTR timer_isr(void *arg)
     TIMERG0.hw_timer[timer_idx].alarm_low = (uint32_t) timer_counter_value;
     //在警报触发之后，需要重新启用它，以便下次能够再触发
     TIMERG0.hw_timer[timer_idx].config.alarm_en = TIMER_ALARM_EN;
+}
+
+/**
+ * 初始化定时器
+ * @param timer_idx          定时器序号
+ * @param auto_reload        定时器是否重载
+ *                           重载不累计时间
+ *                           不重载就一直累计时间
+ * @param timer_interval_sec 时间精度（不是中断的精度）
+ */
+void timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
+{
+    //初始化定时器参数
+    timer_config_t config;
+    config.divider = TIMER_DIVIDER;
+    config.counter_dir = TIMER_COUNT_UP;
+    config.counter_en = TIMER_PAUSE;
+    config.alarm_en = TIMER_ALARM_EN;
+    config.intr_type = TIMER_INTR_LEVEL;
+    config.auto_reload = auto_reload;
+    timer_init(TIMER_GROUP_0, timer_idx, &config);
+
+    //定时器的计数器将会从以下的数值开始计数，同时，如果auto_reload设置了，这个值会重新在警报上装载
+    timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
+
+    //配置警报值以及警报的中断
+    timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
+    timer_enable_intr(TIMER_GROUP_0, timer_idx);
+    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
+
+    //timer_start(TIMER_GROUP_0, timer_idx);
+}
+
+//测试定时器的启动停止
+
+//步进电机任务
+void stepper_task(void *arg)
+{
+    ESP_LOGI(TAG, "步进电机任务开始");
+    //开辟队列空间
+    timer_queue = xQueueCreate(10, sizeof())
+    //初始化定时器
 }
 
 //初始化GPIO
@@ -174,21 +236,19 @@ void write_step_by_phase_counterclockwise(int phase)
     }
 }
 
-/*
- * A sample structure to pass events
- * from the timer interrupt handler to the main program.
- */
-typedef struct {
-    int type;  // the type of timer's event
-    int timer_group;
-    int timer_idx;
-    uint64_t timer_counter_value;
-} timer_event_t;
+// /*
+//  * A sample structure to pass events
+//  * from the timer interrupt handler to the main program.
+//  */
+// typedef struct {
+//     int type;  // the type of timer's event
+//     int timer_group;
+//     int timer_idx;
+//     uint64_t timer_counter_value;
+// } timer_event_t;
 
 xQueueHandle timer_queue;
 
-int time_count = 0;
-int phase_count = 0;
 
 /*
  * A simple helper function to print the raw timer counter value
