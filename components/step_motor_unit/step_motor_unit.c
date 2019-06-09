@@ -148,7 +148,7 @@ void stepper_task(void *arg)
 {
     ESP_LOGI(TAG, "步进电机任务开始");
     //开辟队列空间
-    timer_queue = xQueueCreate(10, sizeof())
+    timer_queue = xQueueCreate(10, sizeof(stepper_t));
     //初始化定时器
 }
 
