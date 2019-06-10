@@ -150,6 +150,7 @@ void stepper_task(void *arg)
     //开辟队列空间
     timer_queue = xQueueCreate(10, sizeof(stepper_t));
     //初始化定时器
+    timer_init(TIMER_0, false, TIMER_INTERVAL0_SEC);
 }
 
 //初始化GPIO
