@@ -44,5 +44,28 @@ void step_gpio_init();
 
 void stepper_run(int direction, int count, int delay);
 
+/**
+ * 根据相序设置GPIO
+ * @param direction 旋转的方向，1为正转，0为反转
+ * @param phase     相序拍数
+ */
+void write_step_by_direction_and_phase(int direction, int phase);
+
+/**
+ * 根据相序设置GPIO
+ * @param direction 旋转的方向，1为正转，0为反转
+ * @param phase     相序拍数
+ */
+void write_step_by_direction_and_phase(int direction, int phase);
+
+//根据相序设置GPIO，正转
+void write_step_by_phase_clockwise(int phase);
+
+//根据相序设置GPIO，反转
+void write_step_by_phase_counterclockwise(int phase);
+
+//步进电机模块初始化
+void stepper_init();
+
 
 #endif

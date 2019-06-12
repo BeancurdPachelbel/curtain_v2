@@ -87,7 +87,7 @@ void IRAM_ATTR timer_isr(void *arg)
         //确保步进电机可以马上停止
         if (is_runnable)
         {
-            write_step_by_direction_and_phase(phase_count);
+            write_step_by_direction_and_phase(direction, phase_count);
             phase_count++;
         }
     }
@@ -118,7 +118,7 @@ void IRAM_ATTR timer_isr(void *arg)
  *                           不重载就一直累计时间
  * @param timer_interval_sec 时间精度（不是中断的精度）
  */
-void timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
+void timer_init_with_idx(int timer_idx, bool auto_reload, double timer_interval_sec)
 {
     //初始化定时器参数
     timer_config_t config;
@@ -136,7 +136,7 @@ void timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
     //配置警报值以及警报的中断
     timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
     timer_enable_intr(TIMER_GROUP_0, timer_idx);
-    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
+    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
 
     //timer_start(TIMER_GROUP_0, timer_idx);
 }
@@ -147,10 +147,6 @@ void timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
 void stepper_task(void *arg)
 {
     ESP_LOGI(TAG, "步进电机任务开始");
-    //开辟队列空间
-    timer_queue = xQueueCreate(10, sizeof(stepper_t));
-    //初始化定时器
-    timer_init(TIMER_0, false, TIMER_INTERVAL0_SEC);
 }
 
 //初始化GPIO
@@ -237,6 +233,17 @@ void write_step_by_phase_counterclockwise(int phase)
     }
 }
 
+//步进电机模块初始化
+void stepper_init()
+{
+    //初始化GPIO
+    step_gpio_init();
+    //开辟队列空间
+    timer_queue = xQueueCreate(10, sizeof(stepper_t));
+    //初始化定时器
+    timer_init_with_idx(TIMER_0, false, TIMER_INTERVAL0_SEC);
+}
+
 // /*
 //  * A sample structure to pass events
 //  * from the timer interrupt handler to the main program.
@@ -248,136 +255,136 @@ void write_step_by_phase_counterclockwise(int phase)
 //     uint64_t timer_counter_value;
 // } timer_event_t;
 
-xQueueHandle timer_queue;
+// xQueueHandle timer_queue;
 
 
 /*
  * A simple helper function to print the raw timer counter value
  * and the counter value converted to seconds
  */
-//打印函数,打印计数器值以及时间（经过转换的时间）
-static void inline print_timer_counter(uint64_t counter_value)
-{
-    printf("Counter: 0x%08x%08x\n", (uint32_t) (counter_value >> 32), (uint32_t) (counter_value));
-    printf("Time   : %.8f s\n", (double) counter_value / TIMER_SCALE);
-}
+// //打印函数,打印计数器值以及时间（经过转换的时间）
+// static void inline print_timer_counter(uint64_t counter_value)
+// {
+//     printf("Counter: 0x%08x%08x\n", (uint32_t) (counter_value >> 32), (uint32_t) (counter_value));
+//     printf("Time   : %.8f s\n", (double) counter_value / TIMER_SCALE);
+// }
 
-//定时器中断函数
-void IRAM_ATTR timer_group0_isr(void *para)
-{
-    int timer_idx = (int) para;
+// //定时器中断函数
+// void IRAM_ATTR timer_group0_isr(void *para)
+// {
+//     int timer_idx = (int) para;
 
-    //从定时器报告的中断中，获取中断状态以及计数器值
-    uint32_t intr_status = TIMERG0.int_st_timers.val;
-    TIMERG0.hw_timer[timer_idx].update = 1;
-    uint64_t timer_counter_value = ((uint64_t) TIMERG0.hw_timer[timer_idx].cnt_high) << 32 | TIMERG0.hw_timer[timer_idx].cnt_low;
+//     //从定时器报告的中断中，获取中断状态以及计数器值
+//     uint32_t intr_status = TIMERG0.int_st_timers.val;
+//     TIMERG0.hw_timer[timer_idx].update = 1;
+//     uint64_t timer_counter_value = ((uint64_t) TIMERG0.hw_timer[timer_idx].cnt_high) << 32 | TIMERG0.hw_timer[timer_idx].cnt_low;
 
-    //准备基础的事件数据，这些数据被发回给任务函数
-    timer_event_t evt;
-    evt.timer_group = 0;
-    evt.timer_idx = timer_idx;
-    evt.timer_counter_value = timer_counter_value;
+//     //准备基础的事件数据，这些数据被发回给任务函数
+//     timer_event_t evt;
+//     evt.timer_group = 0;
+//     evt.timer_idx = timer_idx;
+//     evt.timer_counter_value = timer_counter_value;
 
-    time_count++;
-    if (time_count == 3)
-    { 
-        time_count = 0;
-        if (phase_count == 4)
-        {
-            phase_count = 0;
-        }
-        write_step_by_phase(phase_count);
-        phase_count++;
-    }
+//     time_count++;
+//     if (time_count == 3)
+//     { 
+//         time_count = 0;
+//         if (phase_count == 4)
+//         {
+//             phase_count = 0;
+//         }
+//         write_step_by_phase(phase_count);
+//         phase_count++;
+//     }
 
-    //为定时器（没有reload的情况下）清除中断以及更新警报时间
-    if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_0) {
-        evt.type = TEST_WITHOUT_RELOAD;
-        TIMERG0.int_clr_timers.t0 = 1;
-        timer_counter_value += (uint64_t) (TIMER_INTERVAL0_SEC * TIMER_SCALE);
-        TIMERG0.hw_timer[timer_idx].alarm_high = (uint32_t) (timer_counter_value >> 32);
-        TIMERG0.hw_timer[timer_idx].alarm_low = (uint32_t) timer_counter_value;
-    } else if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_1) {
-        evt.type = TEST_WITH_RELOAD;
-        TIMERG0.int_clr_timers.t1 = 1;
-    } else {
-        evt.type = -1; // not supported even type
-    }
+//     //为定时器（没有reload的情况下）清除中断以及更新警报时间
+//     if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_0) {
+//         evt.type = TEST_WITHOUT_RELOAD;
+//         TIMERG0.int_clr_timers.t0 = 1;
+//         timer_counter_value += (uint64_t) (TIMER_INTERVAL0_SEC * TIMER_SCALE);
+//         TIMERG0.hw_timer[timer_idx].alarm_high = (uint32_t) (timer_counter_value >> 32);
+//         TIMERG0.hw_timer[timer_idx].alarm_low = (uint32_t) timer_counter_value;
+//     } else if ((intr_status & BIT(timer_idx)) && timer_idx == TIMER_1) {
+//         evt.type = TEST_WITH_RELOAD;
+//         TIMERG0.int_clr_timers.t1 = 1;
+//     } else {
+//         evt.type = -1; // not supported even type
+//     }
 
-    //在警报触发之后，需要重新启用它，以便下次能够再触发
-    TIMERG0.hw_timer[timer_idx].config.alarm_en = TIMER_ALARM_EN;
+//     //在警报触发之后，需要重新启用它，以便下次能够再触发
+//     TIMERG0.hw_timer[timer_idx].config.alarm_en = TIMER_ALARM_EN;
 
-    //将事件数据发送给任务函数
-    xQueueSendFromISR(timer_queue, &evt, NULL);
-}
+//     //将事件数据发送给任务函数
+//     xQueueSendFromISR(timer_queue, &evt, NULL);
+// }
 
-//初始化定时器(隶属于定时器组0)
-static void example_tg0_timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
-{
-    //初始化定时器参数
-    timer_config_t config;
-    config.divider = TIMER_DIVIDER;
-    config.counter_dir = TIMER_COUNT_UP;
-    config.counter_en = TIMER_PAUSE;
-    config.alarm_en = TIMER_ALARM_EN;
-    config.intr_type = TIMER_INTR_LEVEL;
-    config.auto_reload = auto_reload;
-    timer_init(TIMER_GROUP_0, timer_idx, &config);
+// //初始化定时器(隶属于定时器组0)
+// static void example_tg0_timer_init(int timer_idx, bool auto_reload, double timer_interval_sec)
+// {
+//     //初始化定时器参数
+//     timer_config_t config;
+//     config.divider = TIMER_DIVIDER;
+//     config.counter_dir = TIMER_COUNT_UP;
+//     config.counter_en = TIMER_PAUSE;
+//     config.alarm_en = TIMER_ALARM_EN;
+//     config.intr_type = TIMER_INTR_LEVEL;
+//     config.auto_reload = auto_reload;
+//     timer_init(TIMER_GROUP_0, timer_idx, &config);
 
-    //定时器的计数器将会从以下的数值开始计数，同时，如果auto_reload设置了，这个值会重新在警报上装载
-    timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
+//     //定时器的计数器将会从以下的数值开始计数，同时，如果auto_reload设置了，这个值会重新在警报上装载
+//     timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
 
-    //配置警报值以及警报的中断
-    timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
-    timer_enable_intr(TIMER_GROUP_0, timer_idx);
-    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
+//     //配置警报值以及警报的中断
+//     timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
+//     timer_enable_intr(TIMER_GROUP_0, timer_idx);
+//     timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
 
-    timer_start(TIMER_GROUP_0, timer_idx);
-}
+//     timer_start(TIMER_GROUP_0, timer_idx);
+// }
 
-//定时器测试任务
-static void timer_example_evt_task(void *arg)
-{
-    int delay = 500;
-    while (1) {
-        timer_event_t evt;
-        //队列接收time_event结构体
-        xQueueReceive(timer_queue, &evt, portMAX_DELAY);
-        // writeStep(1, 0, 0, 0, delay);
-        // writeStep(0, 0, 1, 0, delay);
-        // writeStep(0, 1, 0, 0, delay);
-        // writeStep(0, 0, 0, 1, delay);
-        //ESP_LOGI(TAG, "time_count:%d", time_count);
-        // time_count++;
-        if ( time_count == 1000 )
-        {
-            time_count = 0;
-            ESP_LOGI(TAG, "1s时间到");
-        }
-        //print_timer_counter(evt.timer_counter_value);
+// //定时器测试任务
+// static void timer_example_evt_task(void *arg)
+// {
+//     int delay = 500;
+//     while (1) {
+//         timer_event_t evt;
+//         //队列接收time_event结构体
+//         xQueueReceive(timer_queue, &evt, portMAX_DELAY);
+//         // writeStep(1, 0, 0, 0, delay);
+//         // writeStep(0, 0, 1, 0, delay);
+//         // writeStep(0, 1, 0, 0, delay);
+//         // writeStep(0, 0, 0, 1, delay);
+//         //ESP_LOGI(TAG, "time_count:%d", time_count);
+//         // time_count++;
+//         if ( time_count == 1000 )
+//         {
+//             time_count = 0;
+//             ESP_LOGI(TAG, "1s时间到");
+//         }
+//         //print_timer_counter(evt.timer_counter_value);
 
-        // /* Print information that the timer reported an event */
-        // //打印定时器触发的数据
-        // if (evt.type == TEST_WITHOUT_RELOAD) {
-        //     printf("\n    Example timer without reload\n");
-        // } else if (evt.type == TEST_WITH_RELOAD) {
-        //     printf("\n    Example timer with auto reload\n");
-        // } else {
-        //     printf("\n    UNKNOWN EVENT TYPE\n");
-        // }
-        // printf("Group[%d], timer[%d] alarm event\n", evt.timer_group, evt.timer_idx);
+//         // /* Print information that the timer reported an event */
+//         // //打印定时器触发的数据
+//         // if (evt.type == TEST_WITHOUT_RELOAD) {
+//         //     printf("\n    Example timer without reload\n");
+//         // } else if (evt.type == TEST_WITH_RELOAD) {
+//         //     printf("\n    Example timer with auto reload\n");
+//         // } else {
+//         //     printf("\n    UNKNOWN EVENT TYPE\n");
+//         // }
+//         // printf("Group[%d], timer[%d] alarm event\n", evt.timer_group, evt.timer_idx);
 
-        // /* Print the timer values passed by event */
-        // printf("------- EVENT TIME --------\n");
-        // print_timer_counter(evt.timer_counter_value);
+//         // /* Print the timer values passed by event */
+//         // printf("------- EVENT TIME --------\n");
+//         // print_timer_counter(evt.timer_counter_value);
 
-        // /* Print the timer values as visible by this task */
-        // printf("-------- TASK TIME --------\n");
-        // uint64_t task_counter_value;
-        // timer_get_counter_value(evt.timer_group, evt.timer_idx, &task_counter_value);
-        // print_timer_counter(task_counter_value);
-    }
-}
+//         // /* Print the timer values as visible by this task */
+//         // printf("-------- TASK TIME --------\n");
+//         // uint64_t task_counter_value;
+//         // timer_get_counter_value(evt.timer_group, evt.timer_idx, &task_counter_value);
+//         // print_timer_counter(task_counter_value);
+//     }
+// }
 
 
 //暂停以及启动定时器
@@ -400,18 +407,18 @@ void pause_timer_task(void *arg)
     vTaskDelete(NULL);
 }
 
-//初始化定时器
-void init_timer()
-{
-    timer_queue = xQueueCreate(1000, sizeof(timer_event_t));
-    example_tg0_timer_init(TIMER_0, TEST_WITHOUT_RELOAD, TIMER_INTERVAL0_SEC);
-    //暂停计时器
-    //timer_pause(TIMER_GROUP_0, TIMER_0);
-    //example_tg0_timer_init(TIMER_1, TEST_WITH_RELOAD,    TIMER_INTERVAL1_SEC);
-    xTaskCreate(timer_example_evt_task, "timer_evt_task", 2048, NULL, 5, NULL);
-    //xTaskCreate(pause_timer_task, "pause_timer_task", 1024*4, NULL, 6, NULL);
-    //xTaskCreate(stepper_test_task, "stepper_test_task", 1024*4, NULL, 6, NULL);
-}
+// //初始化定时器
+// void init_timer()
+// {
+//     timer_queue = xQueueCreate(1000, sizeof(timer_event_t));
+//     example_tg0_timer_init(TIMER_0, TEST_WITHOUT_RELOAD, TIMER_INTERVAL0_SEC);
+//     //暂停计时器
+//     //timer_pause(TIMER_GROUP_0, TIMER_0);
+//     //example_tg0_timer_init(TIMER_1, TEST_WITH_RELOAD,    TIMER_INTERVAL1_SEC);
+//     xTaskCreate(timer_example_evt_task, "timer_evt_task", 2048, NULL, 5, NULL);
+//     //xTaskCreate(pause_timer_task, "pause_timer_task", 1024*4, NULL, 6, NULL);
+//     //xTaskCreate(stepper_test_task, "stepper_test_task", 1024*4, NULL, 6, NULL);
+// }
 
 //定时器reload就是一次中断的时间精度
 //定时器没有reload就是累计时间
@@ -423,62 +430,62 @@ void init_timer()
 //
 //定时器暂停以及重新启动
 
-void stepper_run(int direction, int count, int delay)
-{
-    //旋转次数缓冲区
-    int run_count = count;
+// void stepper_run(int direction, int count, int delay)
+// {
+//     //旋转次数缓冲区
+//     int run_count = count;
 
-    //设置定时器中断精度
-    timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0x00000000ULL);
-    timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, TIMER_INTERVAL0_SEC * TIMER_SCALE);
-    timer_enable_intr(TIMER_GROUP_0, TIMER_0);
-    //启动定时器
-    timer_start(TIMER_GROUP_0, TIMER_0);
+//     //设置定时器中断精度
+//     timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0x00000000ULL);
+//     timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, TIMER_INTERVAL0_SEC * TIMER_SCALE);
+//     timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+//     //启动定时器
+//     timer_start(TIMER_GROUP_0, TIMER_0);
     
-    timer_event_t evt;
-    while(run_count > 0)
-    {
-        //队列接收定时器中断通知
-        xQueueReceive(timer_queue, &evt, portMAX_DELAY);
-        if (direction == 1)
-        {
-            //顺时针旋转
-            writeStep(1, 0, 0, 0, delay);
-            writeStep(0, 0, 1, 0, delay);
-            writeStep(0, 1, 0, 0, delay);
-            writeStep(0, 0, 0, 1, delay);
-        }
-        else
-        {
-            //逆时针旋转
-        }
-        run_count--;
-    }
-    //暂停计时器
-    timer_pause(TIMER_GROUP_0, TIMER_0);
-}
+//     timer_event_t evt;
+//     while(run_count > 0)
+//     {
+//         //队列接收定时器中断通知
+//         xQueueReceive(timer_queue, &evt, portMAX_DELAY);
+//         if (direction == 1)
+//         {
+//             //顺时针旋转
+//             writeStep(1, 0, 0, 0, delay);
+//             writeStep(0, 0, 1, 0, delay);
+//             writeStep(0, 1, 0, 0, delay);
+//             writeStep(0, 0, 0, 1, delay);
+//         }
+//         else
+//         {
+//             //逆时针旋转
+//         }
+//         run_count--;
+//     }
+//     //暂停计时器
+//     timer_pause(TIMER_GROUP_0, TIMER_0);
+// }
 
-//测试任务
-void stepper_test_task(void *arg)
-{
-	ESP_LOGI(TAG, "步进电机函数测试任务");
-    //STEPPER_STRUCT stepper;
-    //接收旋转通知，内容为一个结构体，包含旋转方向，旋转次数以及旋转速度
-    //获取结构体
-    //设置中断精度
-    //启用定时器
-    //接收定时器的通知
-    //暂停计时器
-    while(1)
-    {
-        ESP_LOGI(TAG, "步进电机旋转开始");
-        stepper_run(1, 200*50, 1);
-        ESP_LOGI(TAG, "步进电机旋转结束");
-        writeStep(0, 0, 0, 0, 1);
-        vTaskDelay( 5000 / portTICK_RATE_MS);
-    }
-	vTaskDelete(NULL);
-}
+// //测试任务
+// void stepper_test_task(void *arg)
+// {
+// 	ESP_LOGI(TAG, "步进电机函数测试任务");
+//     //STEPPER_STRUCT stepper;
+//     //接收旋转通知，内容为一个结构体，包含旋转方向，旋转次数以及旋转速度
+//     //获取结构体
+//     //设置中断精度
+//     //启用定时器
+//     //接收定时器的通知
+//     //暂停计时器
+//     while(1)
+//     {
+//         ESP_LOGI(TAG, "步进电机旋转开始");
+//         stepper_run(1, 200*50, 1);
+//         ESP_LOGI(TAG, "步进电机旋转结束");
+//         writeStep(0, 0, 0, 0, 1);
+//         vTaskDelay( 5000 / portTICK_RATE_MS);
+//     }
+// 	vTaskDelete(NULL);
+// }
 
 
 //顺时针旋转
