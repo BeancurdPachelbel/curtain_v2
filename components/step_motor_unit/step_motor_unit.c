@@ -50,6 +50,17 @@ int temp_step_count = 0;
 //是否允许旋转
 bool is_runnable = false;
 
+//重置各个状态的值
+void reset_status()
+{
+    timer_count = 0;
+    phase_count = 0;
+    direction = 0;
+    step_count = 0;
+    temp_step_count = 0;
+    is_runnable = false;
+}
+
 //步进结构体
 typedef struct
 {
@@ -57,8 +68,10 @@ typedef struct
     int step_count;
 }stepper_t;
 
-//定时器队列，发送或接收步进结构体，控制定时器的开关(电机启动停止)
-xQueueHandle timer_queue;
+//发送或接收步进结构体，开启定时器，电机启动
+xQueueHandle start_queue;
+//发送或接受步进次数，关闭计时器，电机停止
+xQueueHandle stop_queue;
 
 //定时器中断
 void IRAM_ATTR timer_isr(void *arg)
@@ -66,30 +79,30 @@ void IRAM_ATTR timer_isr(void *arg)
     timer_count++;
     //因为中断的时间精度设置为1ms，即此中断每1ms被调用一次
     //每次脉冲延时2ms，也就是频率为500Hz，转速约150RPM
-    if (timer_count == 2)
+    if (timer_count == 10)
     { 
         timer_count = 0;
         //完成一个步进
         if (phase_count == 4)
         {
-            //当前步进数
-            temp_step_count++;
             //判断当前步进数是否已经达到步进总数
             if ( temp_step_count == step_count)
             {
-                temp_step_count = 0;
                 //向队列发送已完成步进的值
+                xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
                 //同时禁用旋转
                 is_runnable = false;
+                write_step_by_direction_and_phase(direction, -1);
             }
+            temp_step_count++; 
             phase_count = 0;
         }
         //确保步进电机可以马上停止
         if (is_runnable)
         {
             write_step_by_direction_and_phase(direction, phase_count);
-            phase_count++;
         }
+        phase_count++;
     }
 
     int timer_idx = (int) arg;
@@ -143,11 +156,6 @@ void timer_init_with_idx(int timer_idx, bool auto_reload, double timer_interval_
 
 //测试定时器的启动停止
 
-//步进电机任务
-void stepper_task(void *arg)
-{
-    ESP_LOGI(TAG, "步进电机任务开始");
-}
 
 //初始化GPIO
 void step_gpio_init()
@@ -206,6 +214,8 @@ void write_step_by_phase_clockwise(int phase)
         case 3:
             write_step(0, 0, 0, 1); 
             break;
+        case -1:
+            write_step(0, 0, 0, 0);
         default:
             break;
     }
@@ -228,9 +238,63 @@ void write_step_by_phase_counterclockwise(int phase)
         case 3:
             write_step(1, 0, 0, 0); 
             break;
+        case -1:
+            write_step(0, 0, 0, 0);
         default:
             break;
     }
+}
+
+//步进电机任务
+void stepper_task(void *arg)
+{
+    ESP_LOGI(TAG, "步进电机任务开始");
+    step_count = 20;
+    direction = 1;
+    is_runnable = true;
+
+    int count = 0;
+    stepper_t stepper_instance;
+    while(1)
+    {
+        //等待步进电机开始旋转
+        if (xQueueReceive(start_queue, &stepper_instance, portMAX_DELAY))
+        {
+            ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
+            is_runnable = true;
+            direction = stepper_instance.direction;
+            step_count = stepper_instance.step_count;
+            //启动定时器0
+            timer_start(TIMER_GROUP_0, 0);
+            ESP_LOGI(TAG, "定时器启动");
+        }
+        //等待步进电机旋转结束
+        if (xQueueReceive(stop_queue, &count, portMAX_DELAY))
+        {
+            ESP_LOGI(TAG, "步进电机旋转结束");
+            //暂停定时器
+            timer_pause(TIMER_GROUP_0, TIMER_0);
+            ESP_LOGI(TAG, "定时器暂停");
+            //重置各个状态的值
+            reset_status();
+        }
+    }
+    // while(1)
+    // {
+
+    //     //启动定时器0
+    //     timer_start(TIMER_GROUP_0, 0);
+    //     ESP_LOGI(TAG, "定时器启动");
+    //     vTaskDelay( 3000 / portTICK_RATE_MS);
+        
+    //     //暂停定时器
+    //     timer_pause(TIMER_GROUP_0, TIMER_0);
+    //     ESP_LOGI(TAG, "定时器暂停");
+    //     //重置各个状态的值
+    //     reset_status();
+    //     vTaskDelay( 2000 / portTICK_RATE_MS);
+    // }
+    vTaskDelete(NULL);
 }
 
 //步进电机模块初始化
@@ -239,9 +303,28 @@ void stepper_init()
     //初始化GPIO
     step_gpio_init();
     //开辟队列空间
-    timer_queue = xQueueCreate(10, sizeof(stepper_t));
+    start_queue = xQueueCreate(10, sizeof(stepper_t));
+    stop_queue = xQueueCreate(10, sizeof(int));
     //初始化定时器
     timer_init_with_idx(TIMER_0, false, TIMER_INTERVAL0_SEC);
+    //重置各个状态的值
+    reset_status();
+    
+    //测试任务
+    xTaskCreate(stepper_task, "stepper_task", 1024*4, NULL, 6, NULL);
+    
+    //队列测试
+    stepper_t stepper_instance = {.direction = 1, .step_count = 100};
+    while(1)
+    {
+        stepper_instance.direction = 1;
+        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        vTaskDelay(15000 / portTICK_PERIOD_MS);
+
+        stepper_instance.direction = 0;
+        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        vTaskDelay(15000 / portTICK_PERIOD_MS);        
+    }
 }
 
 // /*
