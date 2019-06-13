@@ -102,6 +102,15 @@ void IRAM_ATTR timer_isr(void *arg)
         {
             write_step_by_direction_and_phase(direction, phase_count);
         }
+        else
+        {
+            //没有按预期完成步进总数，说明出现异常
+            if (temp_step_count < step_count)
+            {
+                //向队列发送已完成步进的值
+                xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
+            }
+        }
         phase_count++;
     }
 
@@ -275,26 +284,32 @@ void stepper_task(void *arg)
             //暂停定时器
             timer_pause(TIMER_GROUP_0, TIMER_0);
             ESP_LOGI(TAG, "定时器暂停");
+            //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
+            if (step_count == count)
+            {
+                ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
+            }
+            else
+            {
+                ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, count);
+            }
             //重置各个状态的值
             reset_status();
         }
     }
-    // while(1)
-    // {
 
-    //     //启动定时器0
-    //     timer_start(TIMER_GROUP_0, 0);
-    //     ESP_LOGI(TAG, "定时器启动");
-    //     vTaskDelay( 3000 / portTICK_RATE_MS);
-        
-    //     //暂停定时器
-    //     timer_pause(TIMER_GROUP_0, TIMER_0);
-    //     ESP_LOGI(TAG, "定时器暂停");
-    //     //重置各个状态的值
-    //     reset_status();
-    //     vTaskDelay( 2000 / portTICK_RATE_MS);
-    // }
     vTaskDelete(NULL);
+}
+
+//干扰步进测试任务
+void interfere_stepper_task(void *arg)
+{
+    while(1)
+    {
+        ESP_LOGI(TAG, "干扰步进电机测试");
+        is_runnable = false;
+        vTaskDelay(1000 / portTICK_RATE_MS);
+    }
 }
 
 //步进电机模块初始化
@@ -313,6 +328,9 @@ void stepper_init()
     //测试任务
     xTaskCreate(stepper_task, "stepper_task", 1024*4, NULL, 6, NULL);
     
+    //干扰步进电机测试任务
+    xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
+
     //队列测试
     stepper_t stepper_instance = {.direction = 1, .step_count = 100};
     while(1)
