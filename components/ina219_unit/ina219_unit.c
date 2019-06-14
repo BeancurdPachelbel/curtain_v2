@@ -60,8 +60,8 @@
 #define RW_LENGTH 						128         		// Data length for r/w test, [0,DATA_LENGTH]
 #define DELAY_TIME_BETWEEN_ITEMS_MS 	1000 				// delay time between different test items
 
-#define I2C_MASTER_SCL_IO 				22					// gpio number for I2C master clock
-#define I2C_MASTER_SDA_IO 				23					// gpio number for I2C master data
+#define I2C_MASTER_SCL_IO 				19					// gpio number for I2C master clock
+#define I2C_MASTER_SDA_IO 				18					// gpio number for I2C master data
 #define I2C_MASTER_NUM 					1					// I2C port number for master dev
 #define I2C_MASTER_FREQ_HZ 				100000				// I2C master clock frequency
 #define I2C_MASTER_TX_BUF_DISABLE 		0           		// I2C master doesn't need buffer
@@ -95,7 +95,11 @@ void i2c_init()
     conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
     i2c_param_config(i2c_master_port, &conf);
     //可在此处判断esp_err
-    i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
+    esp_err_t err = i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
+    if ( err == ESP_OK)
+    {
+    	ESP_LOGI(TAG, "I2C总线初始化成功");
+    }
 }
 
 //设置INA219的测量参数
@@ -105,7 +109,7 @@ void ina219_setCalibration_32V_2A()
 	ina219_currentDivider_mA = 10;  // Current LSB = 100uA per bit (1000/100 = 10)
 	ina219_powerDivider_mW = 2;     // Power LSB = 1mW per bit (2/1)
 	uint16_t config = INA219_CONFIG_BVOLTAGERANGE_32V | INA219_CONFIG_GAIN_8_320MV | INA219_CONFIG_BADCRES_12BIT | INA219_CONFIG_SADCRES_12BIT_1S_532US | INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
-	ina219_writeRegister(INA219_REG_CONFIG, config);	
+	ina219_writeRegister(INA219_REG_CONFIG, config);
 }
 
 //初始化INA219
@@ -143,6 +147,14 @@ esp_err_t ina219_writeRegister(uint8_t reg, uint16_t data)
     i2c_master_write_byte(cmd, lsb, ACK_CHECK_EN);
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+    if ( ret == ESP_OK)
+    {
+    	ESP_LOGI(TAG, "写寄存器成功");
+    }
+    else
+    {
+    	ESP_LOGW(TAG, "写寄存器失败");
+    }
     i2c_cmd_link_delete(cmd);
     return ret;
 }
@@ -163,7 +175,7 @@ esp_err_t ina219_readRegister(uint8_t reg, uint16_t *data)
 	
 	//wait for a while to ensure ina219 has taken the sample
 	//perhaps delay could be shorter
-	vTaskDelay(30 / portTICK_RATE_MS);
+	//vTaskDelay(30 / portTICK_RATE_MS);
 	
 	uint8_t data_h, data_l;
 	cmd = i2c_cmd_link_create();
@@ -175,8 +187,18 @@ esp_err_t ina219_readRegister(uint8_t reg, uint16_t *data)
     i2c_master_read_byte(cmd, &data_l, NACK_VAL);
     //assemble data
     *data = (data_h << 8) | data_l;
+    ESP_LOGI(TAG, "data_h:%d", data_h);
+    ESP_LOGI(TAG, "data_l:%d", data_l);
     i2c_master_stop(cmd);
     ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+    if ( ret == ESP_OK)
+    {
+    	ESP_LOGI(TAG, "读寄存器成功");
+    }
+    else
+    {
+    	ESP_LOGW(TAG, "读寄存器失败");
+    }
     i2c_cmd_link_delete(cmd);
     return ret;
 	
