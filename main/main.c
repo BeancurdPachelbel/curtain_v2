@@ -33,6 +33,7 @@
 
 #include "utils_unit.h"
 #include "step_motor_unit.h"
+#include "ina219_unit.h"
 
 #define TAG     "MAIN"
 
@@ -52,16 +53,13 @@ void app_main(void)
 
     // //初始化常量
     // utils_init();
+    // 
+    
+    //初始化INA219
+    ina219_init();
     
     //步进电机模块初始化
-    stepper_init();
+    //stepper_init();
 
-    //初始化GPIO
-    //step_gpio_init();
-    
-    //初始化定时器
-    //init_timer();
 
-    // //测试步进电机函数任务
-    // xTaskCreate(&stepper_test_task, "stepper_test_task", 4096, NULL, 8, NULL);
 }
