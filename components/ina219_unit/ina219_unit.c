@@ -121,6 +121,7 @@ void ina219_init()
 	ina219_powerDivider_mW = 0;
 	vTaskDelay( 15 / portTICK_RATE_MS);
 
+	//设置测量标准
 	ina219_setCalibration_32V_2A();
 
 	//读取电流任务
