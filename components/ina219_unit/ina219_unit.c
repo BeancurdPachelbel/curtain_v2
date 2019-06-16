@@ -108,6 +108,7 @@ void ina219_setCalibration_32V_2A()
 	ina219_calValue = 4096;
 	ina219_currentDivider_mA = 10;  // Current LSB = 100uA per bit (1000/100 = 10)
 	ina219_powerDivider_mW = 2;     // Power LSB = 1mW per bit (2/1)
+	ina219_writeRegister(INA219_REG_CALIBRATION, ina219_calValue);
 	uint16_t config = INA219_CONFIG_BVOLTAGERANGE_32V | INA219_CONFIG_GAIN_8_320MV | INA219_CONFIG_BADCRES_12BIT | INA219_CONFIG_SADCRES_12BIT_1S_532US | INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
 	ina219_writeRegister(INA219_REG_CONFIG, config);
 }
@@ -164,31 +165,38 @@ esp_err_t ina219_writeRegister(uint8_t reg, uint16_t data)
     	ESP_LOGW(TAG, "写寄存器失败");
     }
     i2c_cmd_link_delete(cmd);
+    vTaskDelay(1/portTICK_PERIOD_MS);
     return ret;
 }
 
 //INA219读寄存器
 esp_err_t ina219_readRegister(uint8_t reg, uint16_t *data)
 {
-	int ret;
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    //write device register
-    i2c_master_write_byte(cmd, INA219_DEVICE_ADDRESS << 1 | WRITE_BIT, ACK_CHECK_EN);
-	//write function register
-    i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
-    if ( ret == ESP_OK)
-    {
-    	ESP_LOGI(TAG, "写寄存器成功");
-    }
-    else
-    {
-    	ESP_LOGW(TAG, "写寄存器失败");
-    }
-    i2c_cmd_link_delete(cmd);
+	// int ret;
+ //    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+ //    i2c_master_start(cmd);
+ //    //write device register
+ //    i2c_master_write_byte(cmd, INA219_DEVICE_ADDRESS << 1 | WRITE_BIT, ACK_CHECK_EN);
+	// //write function register
+ //    i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);
+ //    i2c_master_stop(cmd);
+ //    ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+ //    if ( ret == ESP_OK)
+ //    {
+ //    	ESP_LOGI(TAG, "写寄存器成功");
+ //    }
+ //    else
+ //    {
+ //    	ESP_LOGW(TAG, "写寄存器失败");
+ //    }
+ //    i2c_cmd_link_delete(cmd);
+	//    
+	//    
 	
+	ina219_writeRegister(reg, 0);
+	int ret;
+	i2c_cmd_handle_t cmd;
+
 	//wait for a while to ensure ina219 has taken the sample
 	//perhaps delay could be shorter
 	//vTaskDelay(30 / portTICK_RATE_MS);
@@ -201,10 +209,6 @@ esp_err_t ina219_readRegister(uint8_t reg, uint16_t *data)
 	//read value
     i2c_master_read_byte(cmd, &data_h, ACK_VAL);
     i2c_master_read_byte(cmd, &data_l, NACK_VAL);
-    //assemble data
-    *data = (data_h << 8) | data_l;
-    ESP_LOGI(TAG, "data_h:%d", data_h);
-    ESP_LOGI(TAG, "data_l:%d", data_l);
     i2c_master_stop(cmd);
     ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
     if ( ret == ESP_OK)
@@ -216,6 +220,11 @@ esp_err_t ina219_readRegister(uint8_t reg, uint16_t *data)
     	ESP_LOGW(TAG, "读寄存器失败");
     }
     i2c_cmd_link_delete(cmd);
+    //assemble data
+    *data = (data_h << 8) | data_l;
+    ESP_LOGI(TAG, "data_h:%d", data_h);
+    ESP_LOGI(TAG, "data_l:%d", data_l);
+
     return ret;
 	
 }
@@ -229,6 +238,7 @@ int16_t ina219_getCurrent_raw()
 	// reset the cal register, meaning CURRENT and POWER will
 	// not be available ... avoid this by always setting a cal
 	// value even if it's an unfortunate extra step
+	// 
 	ina219_writeRegister(INA219_REG_CALIBRATION, ina219_calValue);
 
 	// Now we can safely read the CURRENT register!
