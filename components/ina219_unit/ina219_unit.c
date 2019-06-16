@@ -60,8 +60,8 @@
 #define RW_LENGTH 						128         		// Data length for r/w test, [0,DATA_LENGTH]
 #define DELAY_TIME_BETWEEN_ITEMS_MS 	1000 				// delay time between different test items
 
-#define I2C_MASTER_SCL_IO 				19					// gpio number for I2C master clock
-#define I2C_MASTER_SDA_IO 				18					// gpio number for I2C master data
+#define I2C_MASTER_SCL_IO 				22					// gpio number for I2C master clock
+#define I2C_MASTER_SDA_IO 				23					// gpio number for I2C master data
 #define I2C_MASTER_NUM 					1					// I2C port number for master dev
 #define I2C_MASTER_FREQ_HZ 				100000				// I2C master clock frequency
 #define I2C_MASTER_TX_BUF_DISABLE 		0           		// I2C master doesn't need buffer
@@ -124,6 +124,8 @@ void ina219_init()
 	//设置测量标准
 	ina219_setCalibration_32V_2A();
 
+	vTaskDelay(1000 / portTICK_RATE_MS);
+
 	//读取电流任务
 	xTaskCreate(read_current_task, "read_current_task", 1024*4, NULL, 6, NULL);
 }
@@ -136,16 +138,21 @@ esp_err_t ina219_writeRegister(uint8_t reg, uint16_t data)
 	//less significant bit
 	uint8_t lsb = (uint8_t)(data & 0xff);
 
+	// data_wr[2] = { msb, lsb};
+
 	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     //write device register
     i2c_master_write_byte(cmd, (INA219_DEVICE_ADDRESS << 1) | WRITE_BIT, ACK_CHECK_EN);
     //write function register
-    i2c_master_write_byte(cmd, (reg << 1) | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);
     //write most significant bit
     i2c_master_write_byte(cmd, msb, ACK_CHECK_EN);
     //write less significant bit
     i2c_master_write_byte(cmd, lsb, ACK_CHECK_EN);
+    
+    //i2c_master_write(cmd, data_wr, 1, ACK_CHECK_EN);
+
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
     if ( ret == ESP_OK)
@@ -172,13 +179,21 @@ esp_err_t ina219_readRegister(uint8_t reg, uint16_t *data)
     i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);
     i2c_master_stop(cmd);
     ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+    if ( ret == ESP_OK)
+    {
+    	ESP_LOGI(TAG, "写寄存器成功");
+    }
+    else
+    {
+    	ESP_LOGW(TAG, "写寄存器失败");
+    }
     i2c_cmd_link_delete(cmd);
 	
 	//wait for a while to ensure ina219 has taken the sample
 	//perhaps delay could be shorter
 	//vTaskDelay(30 / portTICK_RATE_MS);
 	
-	uint8_t data_h, data_l;
+	uint8_t data_h = 0, data_l = 0;
 	cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
 	//write device register
@@ -238,7 +253,7 @@ void read_current_task(void *arg)
 	while(1)
 	{
 		current = ina219_getCurrent_mA();
-		ESP_LOGI(TAG, "当前电流值为:%lf", current);
+		ESP_LOGI(TAG, "当前电流值为:%lf\n", current);
 		vTaskDelay(1000 / portTICK_RATE_MS);
 	}
 }
