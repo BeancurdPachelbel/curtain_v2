@@ -49,6 +49,8 @@ int step_count = 0;
 int temp_step_count = 0;
 //是否允许旋转
 bool is_runnable = false;
+//是否刚刚启动
+bool is_just_running = false;
 
 //重置各个状态的值
 void reset_status()
@@ -79,7 +81,7 @@ void IRAM_ATTR timer_isr(void *arg)
     timer_count++;
     //因为中断的时间精度设置为1ms，即此中断每1ms被调用一次
     //每次脉冲延时2ms，也就是频率为500Hz，转速约150RPM
-    if (timer_count == 10)
+    if (timer_count == 2)
     { 
         timer_count = 0;
         //完成一个步进
@@ -107,6 +109,7 @@ void IRAM_ATTR timer_isr(void *arg)
             //没有按预期完成步进总数，说明出现异常
             if (temp_step_count < step_count)
             {
+                write_step_by_direction_and_phase(direction, -1);
                 //向队列发送已完成步进的值
                 xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
             }
@@ -261,7 +264,6 @@ void stepper_task(void *arg)
     step_count = 20;
     direction = 1;
     is_runnable = true;
-
     int count = 0;
     stepper_t stepper_instance;
     while(1)
@@ -269,29 +271,31 @@ void stepper_task(void *arg)
         //等待步进电机开始旋转
         if (xQueueReceive(start_queue, &stepper_instance, portMAX_DELAY))
         {
-            ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
+            //ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
             is_runnable = true;
+            set_is_just_running(true);
             direction = stepper_instance.direction;
             step_count = stepper_instance.step_count;
             //启动定时器0
             timer_start(TIMER_GROUP_0, 0);
-            ESP_LOGI(TAG, "定时器启动");
+            //ESP_LOGI(TAG, "定时器启动");
         }
         //等待步进电机旋转结束
         if (xQueueReceive(stop_queue, &count, portMAX_DELAY))
         {
-            ESP_LOGI(TAG, "步进电机旋转结束");
+            //ESP_LOGI(TAG, "步进电机旋转结束");
             //暂停定时器
             timer_pause(TIMER_GROUP_0, TIMER_0);
-            ESP_LOGI(TAG, "定时器暂停");
+            //ESP_LOGI(TAG, "定时器暂停");
             //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
             if (step_count == count)
             {
-                ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
+                //ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
             }
             else
             {
                 ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, count);
+                ESP_LOGW(TAG, "is_runnable:%d", is_runnable);
             }
             //重置各个状态的值
             reset_status();
@@ -306,10 +310,45 @@ void interfere_stepper_task(void *arg)
 {
     while(1)
     {
+        vTaskDelay(2000 / portTICK_RATE_MS);
         ESP_LOGI(TAG, "干扰步进电机测试");
-        is_runnable = false;
-        vTaskDelay(1000 / portTICK_RATE_MS);
+        stop_running();
     }
+}
+
+//停止转动
+void stop_running()
+{
+    ESP_LOGW(TAG, "遇阻停止转动");
+    is_runnable = false;
+    write_step(0, 0, 0, 0);
+}
+
+//电机反转
+void stepper_reverse()
+{
+    if (direction == 1)
+    {
+        direction = 0;
+    }
+    else
+    {
+        direction = 1;
+    }
+    stepper_t stepper_instance = {.direction = direction, .step_count = 5000};
+    xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+}
+
+//判断是否刚刚启动
+bool get_is_just_running()
+{
+    return is_just_running;
+}
+
+//设置刚刚启动状态
+void set_is_just_running(bool running)
+{
+    is_just_running = running;
 }
 
 //步进电机模块初始化
@@ -317,6 +356,8 @@ void stepper_init()
 {
     //初始化GPIO
     step_gpio_init();
+    //设置GPIO
+    write_step(0, 0, 0, 0);
     //开辟队列空间
     start_queue = xQueueCreate(10, sizeof(stepper_t));
     stop_queue = xQueueCreate(10, sizeof(int));
@@ -329,19 +370,25 @@ void stepper_init()
     xTaskCreate(stepper_task, "stepper_task", 1024*4, NULL, 6, NULL);
     
     //干扰步进电机测试任务
-    xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
+    //xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
 
     //队列测试
-    stepper_t stepper_instance = {.direction = 1, .step_count = 100};
+    stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
+    //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
     while(1)
     {
-        stepper_instance.direction = 1;
+        if (direction == 1)
+        {
+            direction = 0;
+        }
+        else
+        {
+            direction = 1;
+        }
+        stepper_instance.direction = direction;   
+        is_runnable = true;
         xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-        vTaskDelay(15000 / portTICK_PERIOD_MS);
-
-        stepper_instance.direction = 0;
-        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-        vTaskDelay(15000 / portTICK_PERIOD_MS);        
+        vTaskDelay(5000 / portTICK_PERIOD_MS);        
     }
 }
 

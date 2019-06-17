@@ -59,7 +59,7 @@ void app_main(void)
     ina219_init();
     
     //步进电机模块初始化
-    //stepper_init();
+    stepper_init();
 
 
 }

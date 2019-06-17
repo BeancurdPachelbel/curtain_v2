@@ -67,5 +67,17 @@ void write_step_by_phase_counterclockwise(int phase);
 //步进电机模块初始化
 void stepper_init();
 
+//停止转动
+void stop_running();
+
+//电机反转
+void stepper_reverse();
+
+//判断是否刚刚启动
+bool get_is_just_running();
+
+//设置刚刚启动状态
+void set_is_just_running(bool running);
+
 
 #endif

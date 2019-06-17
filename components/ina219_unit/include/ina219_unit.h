@@ -6,6 +6,8 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 
+#include "step_motor_unit.h"
+
 
 #ifndef __INA219_UNIT_H
 #define __INA219_UNIT_H
