@@ -230,9 +230,10 @@ void read_current_task(void *arg)
 {
 	ESP_LOGI(TAG, "读取电流值任务");
 	float current;
-	float static_current_min = 30.0;
+	float static_current_min = 55.0;
 	float static_current_max = 1210.0;
 	int is_just_run_count = 0;
+	vTaskDelay(2000 / portTICK_RATE_MS);
 	while(1)
 	{
 		current = ina219_getCurrent_mA();
@@ -242,10 +243,17 @@ void read_current_task(void *arg)
 
 		//经测试，静止电流范围36.0mA ~ 38.0mA
 		//如果发生电阻(电流)变化，可将范围调节至30.0mA ~ 38.0mA
-		// if (static_current_min > current)
-		// {
-		// 	ESP_LOGI(TAG, "当前电流值为:%2.1lfmA\n", current);
-		// }
+		//如果步进电机没有处于旋转中
+		if (!get_is_just_running())
+		{
+			if (current > static_current_min)
+			{
+				ESP_LOGI(TAG, "当前手拉电流值为:%2.1lfmA\n", current);
+				//电机反转
+				stepper_reverse();
+			}
+		}
+
 		if (static_current_max < current)
 		{
 			ESP_LOGI(TAG, "当前电流值为:%2.1lfmA\n", current);

@@ -61,10 +61,11 @@ void reset_status()
 {
     timer_count = 0;
     phase_count = 0;
-    direction = 0;
+    //direction = 0;
     step_count = 0;
     temp_step_count = 0;
     is_runnable = false;
+    is_just_running = false;
 }
 
 //步进结构体
@@ -266,10 +267,6 @@ void write_step_by_phase_counterclockwise(int phase)
 void stepper_task(void *arg)
 {
     ESP_LOGI(TAG, "步进电机任务开始");
-    step_count = 20;
-    direction = 1;
-    is_runnable = true;
-    int count = 0;
     stepper_t stepper_instance;
     while(1)
     {
@@ -293,14 +290,14 @@ void stepper_task(void *arg)
         timer_pause(TIMER_GROUP_0, TIMER_0);
         //ESP_LOGI(TAG, "定时器暂停");
         //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
-        if (step_count == count)
+        if (step_count == temp_step_count)
         {
             //ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
         }
         else
         {
-            ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, count);
-            ESP_LOGW(TAG, "is_runnable:%d", is_runnable);
+            ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, temp_step_count);
+            // ESP_LOGW(TAG, "is_runnable:%d", is_runnable);
         }
         //重置各个状态的值
         reset_status();
@@ -377,23 +374,23 @@ void stepper_init()
     //xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
 
     //队列测试
-    stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
-    //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-    while(1)
-    {
-        if (direction == 1)
-        {
-            direction = 0;
-        }
-        else
-        {
-            direction = 1;
-        }
-        stepper_instance.direction = direction;   
-        is_runnable = true;
-        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-        vTaskDelay(5000 / portTICK_PERIOD_MS);        
-    }
+    // stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
+    // xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+    // while(1)
+    // {
+    //     if (direction == 1)
+    //     {
+    //         direction = 0;
+    //     }
+    //     else
+    //     {
+    //         direction = 1;
+    //     }
+    //     stepper_instance.direction = direction;   
+    //     is_runnable = true;
+    //     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+    //     vTaskDelay(8000 / portTICK_PERIOD_MS);        
+    // }
 }
 
 // /*
