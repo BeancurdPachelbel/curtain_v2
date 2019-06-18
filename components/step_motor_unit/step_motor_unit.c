@@ -52,6 +52,10 @@ bool is_runnable = false;
 //是否刚刚启动
 bool is_just_running = false;
 
+//停止旋转任务组
+EventGroupHandle_t stepper_event_group;
+int STOP_BIT = BIT0;
+
 //重置各个状态的值
 void reset_status()
 {
@@ -111,7 +115,8 @@ void IRAM_ATTR timer_isr(void *arg)
             {
                 write_step_by_direction_and_phase(direction, -1);
                 //向队列发送已完成步进的值
-                xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
+                //xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
+                xEventGroupSetBits(stepper_event_group, STOP_BIT);
             }
         }
         phase_count++;
@@ -279,27 +284,26 @@ void stepper_task(void *arg)
             //启动定时器0
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
+            stepper_event_group = xEventGroupCreate();
         }
         //等待步进电机旋转结束
-        if (xQueueReceive(stop_queue, &count, portMAX_DELAY))
+        xEventGroupWaitBits(stepper_event_group, STOP_BIT, false, true, portMAX_DELAY);
+        //ESP_LOGI(TAG, "步进电机旋转结束");
+        //暂停定时器
+        timer_pause(TIMER_GROUP_0, TIMER_0);
+        //ESP_LOGI(TAG, "定时器暂停");
+        //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
+        if (step_count == count)
         {
-            //ESP_LOGI(TAG, "步进电机旋转结束");
-            //暂停定时器
-            timer_pause(TIMER_GROUP_0, TIMER_0);
-            //ESP_LOGI(TAG, "定时器暂停");
-            //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
-            if (step_count == count)
-            {
-                //ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
-            }
-            else
-            {
-                ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, count);
-                ESP_LOGW(TAG, "is_runnable:%d", is_runnable);
-            }
-            //重置各个状态的值
-            reset_status();
+            //ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
         }
+        else
+        {
+            ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, count);
+            ESP_LOGW(TAG, "is_runnable:%d", is_runnable);
+        }
+        //重置各个状态的值
+        reset_status();
     }
 
     vTaskDelete(NULL);
