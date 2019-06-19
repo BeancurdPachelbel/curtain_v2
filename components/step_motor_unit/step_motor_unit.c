@@ -86,7 +86,7 @@ void IRAM_ATTR timer_isr(void *arg)
     timer_count++;
     //因为中断的时间精度设置为1ms，即此中断每1ms被调用一次
     //每次脉冲延时2ms，也就是频率为500Hz，转速约150RPM
-    if (timer_count == 2)
+    if (timer_count == 1)
     { 
         timer_count = 0;
         //完成一个步进
@@ -373,9 +373,9 @@ void stepper_init()
     //干扰步进电机测试任务
     //xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
 
-    //队列测试
+    // //队列测试
     // stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
-    // xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+    // //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
     // while(1)
     // {
     //     if (direction == 1)

@@ -231,7 +231,8 @@ void read_current_task(void *arg)
 	ESP_LOGI(TAG, "读取电流值任务");
 	float current;
 	float static_current_min = 55.0;
-	float static_current_max = 1210.0;
+	//float static_current_max = 1210.0;
+	float static_current_max = 600.0;
 	int is_just_run_count = 0;
 	vTaskDelay(2000 / portTICK_RATE_MS);
 	while(1)
@@ -275,9 +276,6 @@ void read_current_task(void *arg)
 			// 	stop_running();
 			// }
 			stop_running();
-			// vTaskDelay(2000 / portTICK_RATE_MS);
-			// //电机反转
-			// stepper_reverse();
 		}
 		vTaskDelay(20 / portTICK_RATE_MS);
 	}
