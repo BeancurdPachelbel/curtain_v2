@@ -20,12 +20,21 @@
 
 // #include "utils_unit.h"
 
-
-//检查是否已经保存SSID以及密码
-bool is_saved_wifi();
-
-//连接wifi
+/**
+ * @brief       Try to connect wifi
+ * 				If the chip is first boot will switch to smartconfig
+ * 				otherwise connects wifi directly by storaged wifi information
+ *
+ * @return     True if connected wifi, False otherwise
+ */
 bool connect_wifi();
+
+/**
+ * @brief      Smartconfig task, if wifi information is not stored in flash
+ *              which means the chip boots first time, then deploy the smartconfig task
+ * @param      parm  The parameter
+ */
+void smartconfig_task(void * parm);
 
 
 #endif

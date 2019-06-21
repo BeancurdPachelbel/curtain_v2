@@ -34,6 +34,8 @@
 #include "utils_unit.h"
 #include "step_motor_unit.h"
 #include "ina219_unit.h"
+#include "wifi_unit.h"
+#include "mqtt_unit.h"
 
 #define TAG     "MAIN"
 
@@ -51,6 +53,17 @@ void app_main(void)
         err = nvs_flash_init();
     }
 
+    //If wifi connected, try to connect mqtt server
+    if ( connect_wifi() )
+    {
+        mqtt_app_start();
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Wifi is not connected, stop trying to connect mqtt server");
+    }
+
+
     // //初始化常量
     // utils_init();
     // 
@@ -60,6 +73,5 @@ void app_main(void)
     
     //步进电机模块初始化
     stepper_init();
-
 
 }
