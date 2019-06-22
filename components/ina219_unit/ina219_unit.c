@@ -232,7 +232,8 @@ void read_current_task(void *arg)
 	float current;
 	float static_current_min = 55.0;
 	//float static_current_max = 1210.0;
-	float static_current_max = 600.0;
+	// float static_current_max = 600.0;
+	float static_current_max = 750.0;
 	int is_just_run_count = 0;
 	vTaskDelay(2000 / portTICK_RATE_MS);
 	while(1)

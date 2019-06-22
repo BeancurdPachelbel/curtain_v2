@@ -56,6 +56,10 @@ bool is_just_running = false;
 EventGroupHandle_t stepper_event_group;
 int STOP_BIT = BIT0;
 
+//确定行程任务组
+EventGroupHandle_t stepper_travel_group;
+int FINISH_BIT = BIT1;
+
 //重置各个状态的值
 void reset_status()
 {
@@ -171,9 +175,6 @@ void timer_init_with_idx(int timer_idx, bool auto_reload, double timer_interval_
 
     //timer_start(TIMER_GROUP_0, timer_idx);
 }
-
-//测试定时器的启动停止
-
 
 //初始化GPIO
 void step_gpio_init()
@@ -296,13 +297,20 @@ void stepper_task(void *arg)
         }
         else
         {
-            ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d", step_count, temp_step_count);
+            //方向1为关闭窗帘，方向0为开启窗帘
+            ESP_LOGW(TAG, "步进电机未按照预期完成步进，步进总数:%d, 已完成步进数:%d, 当前方向:%d", step_count, temp_step_count, direction);
             // ESP_LOGW(TAG, "is_runnable:%d", is_runnable);
+            //如果确定行程的任务组不为空
+            if ( stepper_travel_group != NULL )
+            {
+                //释放标志位
+                xEventGroupSetBits(stepper_travel_group, FINISH_BIT);
+            }
         }
+        vTaskDelay(10/ portTICK_RATE_MS);
         //重置各个状态的值
         reset_status();
     }
-
     vTaskDelete(NULL);
 }
 
@@ -369,48 +377,75 @@ void stepper_init()
     
     //测试任务
     xTaskCreate(stepper_task, "stepper_task", 1024*4, NULL, 6, NULL);
+
+    //第一次上电确定轨道行程
+    // curtain_track_travel_init();
     
     //干扰步进电机测试任务
     //xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
 
-    // //队列测试
-    // stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
-    // //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-    // while(1)
-    // {
-    //     if (direction == 1)
-    //     {
-    //         direction = 0;
-    //     }
-    //     else
-    //     {
-    //         direction = 1;
-    //     }
-    //     stepper_instance.direction = direction;   
-    //     is_runnable = true;
-    //     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-    //     vTaskDelay(8000 / portTICK_PERIOD_MS);        
-    // }
-}
-
-//暂停以及启动定时器
-void pause_timer_task(void *arg)
-{
+    //队列测试
+    stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
+    //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
     while(1)
     {
-        
-        //暂停定时器
-        timer_pause(TIMER_GROUP_0, TIMER_0);
-        vTaskDelay( 1000 / portTICK_PERIOD_MS);
-
-        timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0x00000000ULL);
-        timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, TIMER_INTERVAL0_SEC * TIMER_SCALE);
-        timer_enable_intr(TIMER_GROUP_0, TIMER_0);
-        //启动定时器
-        timer_start(TIMER_GROUP_0, TIMER_0);
-        vTaskDelay( 1000 / portTICK_PERIOD_MS);
+        if (direction == 1)
+        {
+            direction = 0;
+        }
+        else
+        {
+            direction = 1;
+        }
+        stepper_instance.direction = direction;   
+        is_runnable = true;
+        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        vTaskDelay(8000 / portTICK_PERIOD_MS);        
     }
-    vTaskDelete(NULL);
+}
+
+//第一次上电确定轨道行程
+void curtain_track_travel_init()
+{
+    vTaskDelay(1000 /portTICK_RATE_MS);
+    int count = read_stepper_count();
+    //读取Flash中保存的步进总数，如果为0说明尚未保存，需要确定行程
+    if ( count == 0)
+    {
+        ESP_LOGI(TAG, "尚未保存步进总数，开始确定行程");
+        //电机开始旋转，方向为1，一旦发生堵转则认为是起点
+        stepper_travel_group = xEventGroupCreate();
+        stepper_t stepper_instance = {.direction = 1, .step_count = 5000};
+        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        //等待确定行程任务组结束
+        xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
+
+        //延时3s
+        vTaskDelay(3000 / portTICK_RATE_MS);
+        //电机开始旋转，方向为0，一旦发生堵转则认为是终点，并记录已发送的步进数
+        stepper_travel_group = xEventGroupCreate();
+        stepper_instance.direction = 0;
+        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        //等待确定行程任务组结束
+        xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
+        //保存步进总数
+        save_stepper_count(temp_step_count);
+        
+        //延时3s
+        vTaskDelay(3000 / portTICK_RATE_MS);
+        //电机开始旋转，方向为1，向Flash读取步进总数，回到起点
+        count = read_stepper_count();
+        if ( count != 0)
+        {
+            stepper_instance.direction = 1;
+            stepper_instance.step_count = count;
+            xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        }
+    }
+    else
+    {
+        ESP_LOGI(TAG, "起点到终点的步进总数为%d", count);
+    }
 }
 
 

@@ -16,6 +16,8 @@
 #include "driver/timer.h"
 
 #include "utils_unit.h"
+#include "nvs_unit.h"
+
 //防止重复定义
 #ifndef _STEP_MOTOR_UNIT_H
 #define _STEP_MOTOR_UNIT_H
@@ -78,6 +80,9 @@ bool get_is_just_running();
 
 //设置刚刚启动状态
 void set_is_just_running(bool running);
+
+//第一次上电确定轨道行程
+void curtain_track_travel_init();
 
 
 #endif
