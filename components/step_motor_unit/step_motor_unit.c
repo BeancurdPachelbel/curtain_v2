@@ -48,6 +48,10 @@ int phase_count = 0;
 int current_direction;
 //当前步进数
 int current_stepper_count;
+//当前百分比
+float percentage;
+//mqtt的百分比
+float mqtt_percentage;
 
 //旋转方向
 int direction = 0;
@@ -296,7 +300,7 @@ void stepper_task(void *arg)
         {
             ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
             vTaskSuspend(read_current_handle);
-            timer_count_max = 13;
+            timer_count_max = 12;
             is_runnable = true;
             set_is_just_running(true);
             direction = stepper_instance.direction;
@@ -319,6 +323,16 @@ void stepper_task(void *arg)
         //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
         current_direction = direction;
         current_stepper_count = temp_step_count;
+        int all_stepper_count = get_stepper_count_instance();
+        if (mqtt_percentage < percentage)
+        {
+            percentage = percentage - ((float)current_stepper_count / (float)all_stepper_count);
+        }
+        else if (mqtt_percentage > percentage)
+        {
+            percentage = percentage + ((float)current_stepper_count / (float)all_stepper_count);
+        }
+
         if (step_count == temp_step_count)
         {
             ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
@@ -380,9 +394,23 @@ void stepper_reverse()
 }
 
 //发送电机运行任务
-void send_stepper_run_task(int d, int s)
+void send_stepper_run_task(float percent)
 {
-    stepper_t stepper_instance = {.direction = d, .step_count = s};
+    mqtt_percentage = percent;
+    ESP_LOGI(TAG, "percentage:%f, percent:%f", percentage, percent);
+    stepper_t stepper_instance;
+    int all_stepper_count = get_stepper_count_instance();
+    //将百分比换算成步进数
+    stepper_instance.step_count = abs((int)((percentage - percent) * all_stepper_count));
+    //与当期的关闭百分比对比，如果大于当前的关闭比例，则往开启的方向旋转，小于当前开启比例则往关闭的方向旋转
+    if ( percentage > percent)
+    {
+        stepper_instance.direction = 1;
+    }
+    else if ( percentage < percent)
+    {
+        stepper_instance.direction = 0;
+    }
     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
 }
 
@@ -490,6 +518,7 @@ void curtain_track_travel_init()
         xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
         current_direction = 1;
         current_stepper_count = 0;
+        percentage = 0;
     }
 }
 

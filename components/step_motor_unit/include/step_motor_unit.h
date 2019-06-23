@@ -90,7 +90,7 @@ int get_current_direction();
 int get_current_stepper_count();
 
 //发送电机运行任务
-void send_stepper_run_task(int d, int s);
+void send_stepper_run_task(float percent);
 
 
 #endif
