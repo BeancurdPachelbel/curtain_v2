@@ -3,7 +3,7 @@
 #define		TAG 		"MQTT"
 
 //mqtt server address
-const char *mqtt_address = "mqtt://192.168.0.115";
+const char *mqtt_address = "mqtt://192.168.123.54";
 //mqtt server port
 const int mqtt_port = 1883;
 
@@ -80,6 +80,38 @@ void mqtt_check_message(char *topic, char *payload)
 	if ( strcmp(curtain_command_topic, topic) == 0)
 	{
 		ESP_LOGI(TAG, "Curtain command topic, the payload is: %s", payload);
+        float percentage = atof(payload) / 100;
+        ESP_LOGI(TAG, "Received percentage:%f", percentage);
+        int all_stepper_count = get_stepper_count_instance();
+        int current_stepper_count = get_current_stepper_count();
+        ESP_LOGI(TAG, "all_stepper_count:%d, current_stepper_count:%d", all_stepper_count, current_stepper_count);
+        float current_percentage = ((float)current_stepper_count / (float)all_stepper_count);
+        ESP_LOGI(TAG, "Current curtain closed percentage:%f", current_percentage);
+        int currection_direction = get_current_direction();
+        //将百分比换算成步进数
+        int stepper_count = abs((int)((percentage - current_percentage) * all_stepper_count));
+        ESP_LOGI(TAG, "will run stepper_count:%d", stepper_count);
+        //根据方向以及步进数进行旋转
+        //与当期的关闭百分比对比，如果大于当前的关闭比例，则往开启的方向旋转，小于当前开启比例则往关闭的方向旋转
+        if ( percentage > current_percentage)
+        {
+            ESP_LOGI(TAG, "当前的currection_direction:%d", currection_direction);
+            //发送电机运行任务
+            send_stepper_run_task(1, stepper_count);
+        }
+        else if ( percentage < current_percentage)
+        {
+            // if (currection_direction == 1)
+            // {
+            //     currection_direction = 0;
+            // }
+            // else
+            // {
+            //     currection_direction = 1;
+            // }
+            ESP_LOGI(TAG, "当前取反的currection_direction:%d", currection_direction);
+            send_stepper_run_task(0, stepper_count);    
+        }
 	}
 }
 

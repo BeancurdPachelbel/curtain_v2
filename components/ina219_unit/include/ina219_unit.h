@@ -12,6 +12,8 @@
 #ifndef __INA219_UNIT_H
 #define __INA219_UNIT_H
 
+TaskHandle_t read_current_handle;
+
 //I2C总线初始化
 void i2c_init();
 

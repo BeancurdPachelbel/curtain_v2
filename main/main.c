@@ -54,15 +54,15 @@ void app_main(void)
         err = nvs_flash_init();
     }
 
-    // //If wifi connected, try to connect mqtt server
-    // if ( connect_wifi() )
-    // {
-    //     mqtt_app_start();
-    // }
-    // else
-    // {
-    //     ESP_LOGI(TAG, "Wifi is not connected, stop trying to connect mqtt server");
-    // }
+    //If wifi connected, try to connect mqtt server
+    if ( connect_wifi() )
+    {
+        mqtt_app_start();
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Wifi is not connected, stop trying to connect mqtt server");
+    }
 
 
     // //初始化常量

@@ -3,6 +3,7 @@
 
 #define TAG 		"STEPPER"
 
+extern TaskHandle_t read_current_handle;
 
 //与l298n驱动板的连接(驱动板连接二相四线电机)
 /*
@@ -20,7 +21,7 @@
 
 #define TIMER_DIVIDER         16  //  Hardware timer clock divider
 #define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to seconds
-#define TIMER_INTERVAL0_SEC   (0.001) // sample test interval for the first timer
+#define TIMER_INTERVAL0_SEC   (0.0001) // sample test interval for the first timer
 #define TIMER_INTERVAL1_SEC   (1)   // sample test interval for the second timer
 #define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
 #define TEST_WITH_RELOAD      1        // testing will be done with auto reload
@@ -38,8 +39,15 @@
 
 //定时器累加
 int timer_count = 0;
+//定时器累加参考值
+int timer_count_max = 1;
 //相序累加
 int phase_count = 0;
+
+//当前方向
+int current_direction;
+//当前步进数
+int current_stepper_count;
 
 //旋转方向
 int direction = 0;
@@ -90,7 +98,7 @@ void IRAM_ATTR timer_isr(void *arg)
     timer_count++;
     //因为中断的时间精度设置为1ms，即此中断每1ms被调用一次
     //每次脉冲延时2ms，也就是频率为500Hz，转速约150RPM
-    if (timer_count == 1)
+    if (timer_count == timer_count_max)
     { 
         timer_count = 0;
         //完成一个步进
@@ -100,10 +108,11 @@ void IRAM_ATTR timer_isr(void *arg)
             if ( temp_step_count == step_count)
             {
                 //向队列发送已完成步进的值
-                xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
+                // xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
                 //同时禁用旋转
                 is_runnable = false;
                 write_step_by_direction_and_phase(direction, -1);
+                xEventGroupSetBits(stepper_event_group, STOP_BIT);
             }
             temp_step_count++; 
             phase_count = 0;
@@ -121,7 +130,7 @@ void IRAM_ATTR timer_isr(void *arg)
                 write_step_by_direction_and_phase(direction, -1);
                 //向队列发送已完成步进的值
                 //xQueueSendFromISR(stop_queue, &temp_step_count, NULL);
-                xEventGroupSetBits(stepper_event_group, STOP_BIT);
+                // xEventGroupSetBits(stepper_event_group, STOP_BIT);
             }
         }
         phase_count++;
@@ -264,6 +273,17 @@ void write_step_by_phase_counterclockwise(int phase)
     }
 }
 
+//获取当前方向
+int get_current_direction()
+{
+    return current_direction;
+}
+//获取当前步进数
+int get_current_stepper_count()
+{
+    return current_stepper_count;
+}
+
 //步进电机任务
 void stepper_task(void *arg)
 {
@@ -274,7 +294,9 @@ void stepper_task(void *arg)
         //等待步进电机开始旋转
         if (xQueueReceive(start_queue, &stepper_instance, portMAX_DELAY))
         {
-            //ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
+            ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
+            vTaskSuspend(read_current_handle);
+            timer_count_max = 13;
             is_runnable = true;
             set_is_just_running(true);
             direction = stepper_instance.direction;
@@ -283,6 +305,10 @@ void stepper_task(void *arg)
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
             stepper_event_group = xEventGroupCreate();
+            vTaskDelay( 200 / portTICK_RATE_MS);
+            // timer_count_max = 1;
+            // vTaskDelay( 2000 / portTICK_RATE_MS);
+            vTaskResume(read_current_handle);
         }
         //等待步进电机旋转结束
         xEventGroupWaitBits(stepper_event_group, STOP_BIT, false, true, portMAX_DELAY);
@@ -291,9 +317,11 @@ void stepper_task(void *arg)
         timer_pause(TIMER_GROUP_0, TIMER_0);
         //ESP_LOGI(TAG, "定时器暂停");
         //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
+        current_direction = direction;
+        current_stepper_count = temp_step_count;
         if (step_count == temp_step_count)
         {
-            //ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
+            ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
         }
         else
         {
@@ -305,9 +333,9 @@ void stepper_task(void *arg)
             {
                 //释放标志位
                 xEventGroupSetBits(stepper_travel_group, FINISH_BIT);
+                vTaskDelay(10/ portTICK_RATE_MS);
             }
         }
-        vTaskDelay(10/ portTICK_RATE_MS);
         //重置各个状态的值
         reset_status();
     }
@@ -331,6 +359,9 @@ void stop_running()
     ESP_LOGW(TAG, "遇阻停止转动");
     is_runnable = false;
     write_step(0, 0, 0, 0);
+    //暂停定时器
+    timer_pause(TIMER_GROUP_0, TIMER_0);
+    xEventGroupSetBits(stepper_event_group, STOP_BIT);
 }
 
 //电机反转
@@ -345,6 +376,13 @@ void stepper_reverse()
         direction = 1;
     }
     stepper_t stepper_instance = {.direction = direction, .step_count = 5000};
+    xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+}
+
+//发送电机运行任务
+void send_stepper_run_task(int d, int s)
+{
+    stepper_t stepper_instance = {.direction = d, .step_count = s};
     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
 }
 
@@ -379,29 +417,29 @@ void stepper_init()
     xTaskCreate(stepper_task, "stepper_task", 1024*4, NULL, 6, NULL);
 
     //第一次上电确定轨道行程
-    // curtain_track_travel_init();
+    curtain_track_travel_init();
     
     //干扰步进电机测试任务
     //xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
 
-    //队列测试
-    stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
-    //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-    while(1)
-    {
-        if (direction == 1)
-        {
-            direction = 0;
-        }
-        else
-        {
-            direction = 1;
-        }
-        stepper_instance.direction = direction;   
-        is_runnable = true;
-        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
-        vTaskDelay(8000 / portTICK_PERIOD_MS);        
-    }
+    // //队列测试
+    // stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
+    // //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+    // while(1)
+    // {
+    //     if (direction == 1)
+    //     {
+    //         direction = 0;
+    //     }
+    //     else
+    //     {
+    //         direction = 1;
+    //     }
+    //     stepper_instance.direction = direction;   
+    //     is_runnable = true;
+    //     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+    //     vTaskDelay(5000 / portTICK_PERIOD_MS);        
+    // }
 }
 
 //第一次上电确定轨道行程
@@ -445,6 +483,8 @@ void curtain_track_travel_init()
     else
     {
         ESP_LOGI(TAG, "起点到终点的步进总数为%d", count);
+        stepper_t stepper_instance = {.direction = 1, .step_count = 5000};
+        xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
     }
 }
 

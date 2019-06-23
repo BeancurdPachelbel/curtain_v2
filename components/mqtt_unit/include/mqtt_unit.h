@@ -8,6 +8,9 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 
+#include "step_motor_unit.h"
+#include "nvs_unit.h"
+
 
 /**
  * @brief      The mqtt client starts to connect server 

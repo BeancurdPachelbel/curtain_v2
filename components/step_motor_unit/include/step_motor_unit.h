@@ -84,5 +84,13 @@ void set_is_just_running(bool running);
 //第一次上电确定轨道行程
 void curtain_track_travel_init();
 
+//获取当前方向
+int get_current_direction();
+//获取当前步进数
+int get_current_stepper_count();
+
+//发送电机运行任务
+void send_stepper_run_task(int d, int s);
+
 
 #endif

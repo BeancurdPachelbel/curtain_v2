@@ -128,7 +128,7 @@ void ina219_init()
 	vTaskDelay(1000 / portTICK_RATE_MS);
 
 	//读取电流任务
-	xTaskCreate(read_current_task, "read_current_task", 1024*4, NULL, 6, NULL);
+	xTaskCreate(read_current_task, "read_current_task", 1024*4, NULL, 6, &read_current_handle);
 }
 
 //INA219写寄存器
@@ -233,7 +233,7 @@ void read_current_task(void *arg)
 	float static_current_min = 55.0;
 	//float static_current_max = 1210.0;
 	// float static_current_max = 600.0;
-	float static_current_max = 750.0;
+	float static_current_max = 700.0;
 	int is_just_run_count = 0;
 	vTaskDelay(2000 / portTICK_RATE_MS);
 	while(1)
