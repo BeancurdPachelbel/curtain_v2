@@ -97,7 +97,7 @@ void mqtt_check_message(char *topic, char *payload)
         {
             ESP_LOGI(TAG, "当前的currection_direction:%d", currection_direction);
             //发送电机运行任务
-            send_stepper_run_task(1, stepper_count);
+            send_stepper_run_task(0, stepper_count);
         }
         else if ( percentage < current_percentage)
         {
@@ -110,7 +110,7 @@ void mqtt_check_message(char *topic, char *payload)
             //     currection_direction = 1;
             // }
             ESP_LOGI(TAG, "当前取反的currection_direction:%d", currection_direction);
-            send_stepper_run_task(0, stepper_count);    
+            send_stepper_run_task(1, stepper_count);    
         }
 	}
 }

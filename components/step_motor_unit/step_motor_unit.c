@@ -483,8 +483,13 @@ void curtain_track_travel_init()
     else
     {
         ESP_LOGI(TAG, "起点到终点的步进总数为%d", count);
+        stepper_travel_group = xEventGroupCreate();
         stepper_t stepper_instance = {.direction = 1, .step_count = 5000};
         xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
+        //等待确定行程任务组结束
+        xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
+        current_direction = 1;
+        current_stepper_count = 0;
     }
 }
 
