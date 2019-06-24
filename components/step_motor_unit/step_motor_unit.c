@@ -309,7 +309,7 @@ void stepper_task(void *arg)
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
             stepper_event_group = xEventGroupCreate();
-            vTaskDelay( 200 / portTICK_RATE_MS);
+            vTaskDelay( 100 / portTICK_RATE_MS);
             // timer_count_max = 1;
             // vTaskDelay( 2000 / portTICK_RATE_MS);
             vTaskResume(read_current_handle);
@@ -332,7 +332,7 @@ void stepper_task(void *arg)
         {
             percentage = percentage + ((float)current_stepper_count / (float)all_stepper_count);
         }
-
+        ESP_LOGI(TAG, "current percentage:%f", percentage);
         if (step_count == temp_step_count)
         {
             ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
@@ -381,14 +381,7 @@ void stop_running()
 //电机反转
 void stepper_reverse()
 {
-    if (direction == 1)
-    {
-        direction = 0;
-    }
-    else
-    {
-        direction = 1;
-    }
+    direction = !direction;
     stepper_t stepper_instance = {.direction = direction, .step_count = 5000};
     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
 }
@@ -397,7 +390,7 @@ void stepper_reverse()
 void send_stepper_run_task(float percent)
 {
     mqtt_percentage = percent;
-    ESP_LOGI(TAG, "percentage:%f, percent:%f", percentage, percent);
+    ESP_LOGI(TAG, "current percentage:%f, expected percentage:%f", percentage, percent);
     stepper_t stepper_instance;
     int all_stepper_count = get_stepper_count_instance();
     //将百分比换算成步进数
