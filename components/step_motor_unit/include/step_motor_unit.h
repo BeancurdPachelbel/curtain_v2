@@ -90,7 +90,10 @@ int get_current_direction();
 int get_current_stepper_count();
 
 //发送电机运行任务
-void send_stepper_run_task(float percent);
+void send_stepper_run_task(int percentage);
+
+//如果接收到0%或者100%的开合百分比，直接运行到堵转，然后设置百分比为0或者100
+void set_current_percentage();
 
 
 #endif

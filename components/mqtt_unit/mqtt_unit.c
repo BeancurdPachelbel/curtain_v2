@@ -114,8 +114,8 @@ void mqtt_check_message(char *topic, char *payload)
   //       }
 
         ESP_LOGI(TAG, "Curtain command topic, the payload is: %s", payload);
-        float percentage = atof(payload) / 100;
-        ESP_LOGI(TAG, "Received percentage:%f", percentage);
+        int percentage = atoi(payload);
+        ESP_LOGI(TAG, "Received percentage:%d%%", percentage);
         send_stepper_run_task(percentage);    
 	}
 }

@@ -3,7 +3,9 @@
 
 #define TAG 		"STEPPER"
 
-extern TaskHandle_t read_current_handle;
+#define START       0
+#define END         1
+#define MIDDLE      2
 
 //与l298n驱动板的连接(驱动板连接二相四线电机)
 /*
@@ -25,6 +27,8 @@ extern TaskHandle_t read_current_handle;
 #define TIMER_INTERVAL1_SEC   (1)   // sample test interval for the second timer
 #define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
 #define TEST_WITH_RELOAD      1        // testing will be done with auto reload
+
+extern TaskHandle_t read_current_handle;
 
 //通过定时器的中断向步进电机发送脉冲
 //中断函数里需要判断旋转的方向以及步进数
@@ -49,9 +53,11 @@ int current_direction;
 //当前步进数
 int current_stepper_count;
 //当前百分比
-float percentage;
+int current_percentage;
 //mqtt的百分比
-float mqtt_percentage;
+int mqtt_percentage;
+//位置状态(当前开合百分比的状态值)
+int position_status;
 
 //旋转方向
 int direction = 0;
@@ -320,19 +326,11 @@ void stepper_task(void *arg)
         //暂停定时器
         timer_pause(TIMER_GROUP_0, TIMER_0);
         //ESP_LOGI(TAG, "定时器暂停");
-        //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
         current_direction = direction;
         current_stepper_count = temp_step_count;
-        int all_stepper_count = get_stepper_count_instance();
-        if (mqtt_percentage < percentage)
-        {
-            percentage = percentage - ((float)current_stepper_count / (float)all_stepper_count);
-        }
-        else if (mqtt_percentage > percentage)
-        {
-            percentage = percentage + ((float)current_stepper_count / (float)all_stepper_count);
-        }
-        ESP_LOGI(TAG, "current percentage:%f", percentage);
+        //设置当前百分比
+        set_current_percentage();
+        //判断队列接收的步进数是否等于预期的步进总数，如果不是，则说明出现异常
         if (step_count == temp_step_count)
         {
             ESP_LOGI(TAG, "步进电机按照预期完成步进，步进总数:%d", step_count);
@@ -386,23 +384,81 @@ void stepper_reverse()
     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
 }
 
-//发送电机运行任务
-void send_stepper_run_task(float percent)
+//如果接收到0%或者100%的开合百分比，直接运行到堵转，然后设置百分比为0或者100
+void set_current_percentage()
 {
-    mqtt_percentage = percent;
-    ESP_LOGI(TAG, "current percentage:%f, expected percentage:%f", percentage, percent);
-    stepper_t stepper_instance;
-    int all_stepper_count = get_stepper_count_instance();
-    //将百分比换算成步进数
-    stepper_instance.step_count = abs((int)((percentage - percent) * all_stepper_count));
-    //与当期的关闭百分比对比，如果大于当前的关闭比例，则往开启的方向旋转，小于当前开启比例则往关闭的方向旋转
-    if ( percentage > percent)
+    if (position_status == START)
     {
-        stepper_instance.direction = 1;
+        current_percentage = 100;
     }
-    else if ( percentage < percent)
+    else if (position_status == END)
     {
+        current_percentage = 0;
+    }
+    else
+    {
+        int all_stepper_count = get_stepper_count_instance();
+        if (mqtt_percentage < current_percentage)
+        {
+            current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
+        }
+        else if (mqtt_percentage > current_percentage)
+        {
+            current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
+        }
+    }
+    ESP_LOGI(TAG, "current percentage:%d%%", current_percentage);
+}
+
+//统一格式化百分比为小数点后两位，格式化标准为小数点第三位四舍五入
+//如MQTT接收的百分比为20%，而实际百分比为20.2%，避免这种情况
+
+//发送电机运行任务
+void send_stepper_run_task(int percentage)
+{
+    mqtt_percentage = percentage;
+    ESP_LOGI(TAG, "current percentage:%d%%, expected percentage:%d%%", current_percentage, percentage);
+    int all_stepper_count = get_stepper_count_instance();
+
+    stepper_t stepper_instance;
+    //运行到起点
+    if (percentage == 0)
+    {
+        position_status = START;
+        stepper_instance.direction = 1;
+        stepper_instance.step_count = all_stepper_count * 10;
+    }
+    //运行到终点
+    else if (percentage == 100)
+    {
+        position_status = END;
         stepper_instance.direction = 0;
+        stepper_instance.step_count = all_stepper_count * 10;
+    }
+    //运行到指定位置
+    else
+    {
+        //保留小数点后两位,统一浮点型精度
+        float percentage_f = (float)percentage / 100;
+        float current_percentage_f = (float)current_percentage / 100;
+        position_status = MIDDLE;
+
+        if ( current_percentage == percentage)
+        {
+            ESP_LOGI(TAG, "相同的百分比，不需要旋转");
+            return;
+        }
+        //与当期的关闭百分比对比，如果大于当前的关闭比例，则往开启的方向旋转，小于当前开启比例则往关闭的方向旋转
+        else if (current_percentage > percentage)
+        {
+            stepper_instance.direction = 1;
+        }
+        else if (current_percentage < percentage)
+        {
+            stepper_instance.direction = 0;
+        }
+        //将百分比换算成步进数
+        stepper_instance.step_count = abs((int)((current_percentage_f - percentage_f) * all_stepper_count));
     }
     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
 }
@@ -511,7 +567,7 @@ void curtain_track_travel_init()
         xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
         current_direction = 1;
         current_stepper_count = 0;
-        percentage = 0;
+        current_percentage = 0;
     }
 }
 
