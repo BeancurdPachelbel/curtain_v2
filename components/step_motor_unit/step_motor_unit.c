@@ -30,6 +30,8 @@
 
 extern TaskHandle_t read_current_handle;
 
+extern void publish_curtain_status(int percentage);
+
 //通过定时器的中断向步进电机发送脉冲
 //中断函数里需要判断旋转的方向以及步进数
 //初始化定时器
@@ -315,7 +317,7 @@ void stepper_task(void *arg)
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
             stepper_event_group = xEventGroupCreate();
-            vTaskDelay( 100 / portTICK_RATE_MS);
+            vTaskDelay( 50 / portTICK_RATE_MS);
             // timer_count_max = 1;
             // vTaskDelay( 2000 / portTICK_RATE_MS);
             vTaskResume(read_current_handle);
@@ -368,6 +370,7 @@ void interfere_stepper_task(void *arg)
 //停止转动
 void stop_running()
 {
+    //说明触发手拉电流
     ESP_LOGW(TAG, "遇阻停止转动");
     is_runnable = false;
     write_step(0, 0, 0, 0);
@@ -387,27 +390,49 @@ void stepper_reverse()
 //如果接收到0%或者100%的开合百分比，直接运行到堵转，然后设置百分比为0或者100
 void set_current_percentage()
 {
-    if (position_status == START)
+    //手拉启动电机，位置报告可能不精确，但是不影响实际运行行程
+    //MQTT控制则可以保证精确性
+    int all_stepper_count = get_stepper_count_instance();
+    if (direction == 1)
     {
-        current_percentage = 100;
-    }
-    else if (position_status == END)
-    {
-        current_percentage = 0;
+        current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
     }
     else
     {
-        int all_stepper_count = get_stepper_count_instance();
-        if (mqtt_percentage < current_percentage)
-        {
-            current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
-        }
-        else if (mqtt_percentage > current_percentage)
-        {
-            current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
-        }
+        current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
     }
+
+    if (current_percentage > 100)
+    {
+        current_percentage = 100;
+    }
+    if (current_percentage < 0)
+    {
+        current_percentage = 0;
+    }
+
+    // if (position_status == START)
+    // {
+    //     current_percentage = 0;
+    // }
+    // else if (position_status == END)
+    // {
+    //     current_percentage = 100;
+    // }
+    // else
+    // {
+    //     int all_stepper_count = get_stepper_count_instance();
+    //     if (mqtt_percentage < current_percentage)
+    //     {
+    //         current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
+    //     }
+    //     else if (mqtt_percentage > current_percentage)
+    //     {
+    //         current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
+    //     }
+    // }
     ESP_LOGI(TAG, "current percentage:%d%%", current_percentage);
+    publish_curtain_status(current_percentage);
 }
 
 //统一格式化百分比为小数点后两位，格式化标准为小数点第三位四舍五入
@@ -560,6 +585,7 @@ void curtain_track_travel_init()
     else
     {
         ESP_LOGI(TAG, "起点到终点的步进总数为%d", count);
+        current_percentage = 100;
         stepper_travel_group = xEventGroupCreate();
         stepper_t stepper_instance = {.direction = 1, .step_count = 5000};
         xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
@@ -567,7 +593,7 @@ void curtain_track_travel_init()
         xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
         current_direction = 1;
         current_stepper_count = 0;
-        current_percentage = 0;
+        mqtt_percentage = 0;
     }
 }
 
