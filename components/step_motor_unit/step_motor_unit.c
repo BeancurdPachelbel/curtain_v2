@@ -356,17 +356,6 @@ void stepper_task(void *arg)
     vTaskDelete(NULL);
 }
 
-//干扰步进测试任务
-void interfere_stepper_task(void *arg)
-{
-    while(1)
-    {
-        vTaskDelay(2000 / portTICK_RATE_MS);
-        ESP_LOGI(TAG, "干扰步进电机测试");
-        stop_running();
-    }
-}
-
 //停止转动
 void stop_running()
 {
@@ -520,9 +509,6 @@ void stepper_init()
 
     //第一次上电确定轨道行程
     curtain_track_travel_init();
-    
-    //干扰步进电机测试任务
-    //xTaskCreate(interfere_stepper_task, "interfere_stepper_task", 1024*4, NULL, 6, NULL);
 
     // //队列测试
     // stepper_t stepper_instance = {.direction = 1, .step_count = 1000};
