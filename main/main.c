@@ -31,7 +31,6 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 
-#include "utils_unit.h"
 #include "step_motor_unit.h"
 #include "ina219_unit.h"
 #include "wifi_unit.h"
@@ -44,7 +43,6 @@
 void app_main(void)
 {
 
-    //nvs_flash_init();
     // Initialize NVS
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -63,16 +61,11 @@ void app_main(void)
     {
         ESP_LOGI(TAG, "Wifi is not connected, stop trying to connect mqtt server");
     }
-
-
-    // //初始化常量
-    // utils_init();
-    // 
     
-    //初始化INA219
+    //Initialize INA219
     ina219_init();
     
-    //步进电机模块初始化
+    //Initialize stepper motor
     stepper_init();
 
 }

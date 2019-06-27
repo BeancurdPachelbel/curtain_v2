@@ -228,13 +228,10 @@ float ina219_getCurrent_mA()
 //测试读取电流值任务
 void read_current_task(void *arg)
 {
-	ESP_LOGI(TAG, "读取电流值任务");
+	ESP_LOGI(TAG, "检测电流值任务");
 	float current;
 	float static_current_min = 55.0;
-	//float static_current_max = 1210.0;
-	// float static_current_max = 600.0;
 	float static_current_max = 700.0;
-	int is_just_run_count = 0;
 	vTaskDelay(2000 / portTICK_RATE_MS);
 	while(1)
 	{
@@ -243,9 +240,8 @@ void read_current_task(void *arg)
 		// ESP_LOGI(TAG, "当前电流值为:%2.1lfmA\n", current);
 		// vTaskDelay(1000 / portTICK_RATE_MS);
 
-		//经测试，静止电流范围36.0mA ~ 38.0mA
-		//如果发生电阻(电流)变化，可将范围调节至30.0mA ~ 38.0mA
 		//如果步进电机没有处于旋转中
+		//判断is_runnable，如果可以则删除is_just_running
 		if (!get_is_just_running())
 		{
 			if (current > static_current_min)
@@ -259,23 +255,6 @@ void read_current_task(void *arg)
 		if (static_current_max < current)
 		{
 			ESP_LOGI(TAG, "当前电流值为:%2.1lfmA\n", current);
-			// //如果是刚启动120ms内则忽略
-			// if (get_is_just_running())
-			// {
-			// 	if (is_just_run_count < 4)
-			// 	{
-			// 		is_just_run_count++;
-			// 	}
-			// 	else
-			// 	{
-			// 		is_just_run_count = 0;
-			// 		set_is_just_running(false);
-			// 	}
-			// }
-			// else
-			// {
-			// 	stop_running();
-			// }
 			stop_running();
 		}
 		vTaskDelay(20 / portTICK_RATE_MS);

@@ -15,7 +15,6 @@
 #include "driver/periph_ctrl.h"
 #include "driver/timer.h"
 
-#include "utils_unit.h"
 #include "nvs_unit.h"
 
 //防止重复定义

@@ -384,6 +384,7 @@ void set_current_percentage()
     int all_stepper_count = get_stepper_count_instance();
     if (direction == 1)
     {
+        //求出百分比，保留小数点后两位，再化为整数
         current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
     }
     else
@@ -400,32 +401,9 @@ void set_current_percentage()
         current_percentage = 0;
     }
 
-    // if (position_status == START)
-    // {
-    //     current_percentage = 0;
-    // }
-    // else if (position_status == END)
-    // {
-    //     current_percentage = 100;
-    // }
-    // else
-    // {
-    //     int all_stepper_count = get_stepper_count_instance();
-    //     if (mqtt_percentage < current_percentage)
-    //     {
-    //         current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
-    //     }
-    //     else if (mqtt_percentage > current_percentage)
-    //     {
-    //         current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
-    //     }
-    // }
     ESP_LOGI(TAG, "current percentage:%d%%", current_percentage);
     publish_curtain_status(current_percentage);
 }
-
-//统一格式化百分比为小数点后两位，格式化标准为小数点第三位四舍五入
-//如MQTT接收的百分比为20%，而实际百分比为20.2%，避免这种情况
 
 //发送电机运行任务
 void send_stepper_run_task(int percentage)
@@ -515,15 +493,7 @@ void stepper_init()
     // //xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
     // while(1)
     // {
-    //     if (direction == 1)
-    //     {
-    //         direction = 0;
-    //     }
-    //     else
-    //     {
-    //         direction = 1;
-    //     }
-    //     stepper_instance.direction = direction;   
+    //     stepper_instance.direction = !direction;   
     //     is_runnable = true;
     //     xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
     //     vTaskDelay(5000 / portTICK_PERIOD_MS);        
@@ -539,6 +509,8 @@ void curtain_track_travel_init()
     if ( count == 0)
     {
         ESP_LOGI(TAG, "尚未保存步进总数，开始确定行程");
+
+        //确定起点
         //电机开始旋转，方向为1，一旦发生堵转则认为是起点
         stepper_travel_group = xEventGroupCreate();
         stepper_t stepper_instance = {.direction = 1, .step_count = 5000};
@@ -546,6 +518,7 @@ void curtain_track_travel_init()
         //等待确定行程任务组结束
         xEventGroupWaitBits(stepper_travel_group, FINISH_BIT, false, true, portMAX_DELAY);
 
+        //确定终点
         //延时3s
         vTaskDelay(3000 / portTICK_RATE_MS);
         //电机开始旋转，方向为0，一旦发生堵转则认为是终点，并记录已发送的步进数
@@ -557,6 +530,7 @@ void curtain_track_travel_init()
         //保存步进总数
         save_stepper_count(temp_step_count);
         
+        //回到起点
         //延时3s
         vTaskDelay(3000 / portTICK_RATE_MS);
         //电机开始旋转，方向为1，向Flash读取步进总数，回到起点

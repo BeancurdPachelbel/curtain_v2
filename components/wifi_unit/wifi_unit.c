@@ -2,7 +2,7 @@
 
 #define     TAG     "WIFI"
 
-//Wifi task group, ensure block the code until the wifi connected successfully
+//Wifi task group, ensure to block the code until the wifi connected successfully
 static EventGroupHandle_t wifi_event_group;
 const static int CONNECTED_BIT = BIT0;
 int ESPTOUCH_DONE_BIT = BIT1;
@@ -16,13 +16,15 @@ bool is_smartconfig = false;
  */
 static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
-    switch (event->event_id) {
+    switch (event->event_id) 
+    {
         case SYSTEM_EVENT_STA_START:
-            if (is_saved){
-                // is_first_boot = false;
+            if (is_saved)
+            {
                 esp_wifi_connect();
-            }else{
-                // is_first_boot = true;
+            }
+            else
+            {
                 xTaskCreate(smartconfig_task, "smartconfig_task", 4096, NULL, 3, NULL);
             }
             break;
@@ -45,7 +47,8 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
  */
 void smart_config_callback(smartconfig_status_t status, void *pdata)
 {
-    switch (status) {
+    switch (status) 
+    {
         case SC_STATUS_WAIT:
             ESP_LOGI(TAG, "Smartconfig is waiting...");
             break;
@@ -66,7 +69,8 @@ void smart_config_callback(smartconfig_status_t status, void *pdata)
             break;
         case SC_STATUS_LINK_OVER:
             ESP_LOGI(TAG, "Smartconfig over");
-            if (pdata != NULL) {
+            if (pdata != NULL) 
+            {
                 is_smartconfig = true;
                 uint8_t phone_ip[4] = { 0 };
                 memcpy(phone_ip, (uint8_t* )pdata, 4);
@@ -79,13 +83,14 @@ void smart_config_callback(smartconfig_status_t status, void *pdata)
     }
 }
 
-void smartconfig_task(void * parm)
+void smartconfig_task(void *parm)
 {
     ESP_LOGI(TAG, "Smartconfig begins");
     EventBits_t uxBits;
     ESP_ERROR_CHECK( esp_smartconfig_set_type(SC_TYPE_ESPTOUCH) );
     ESP_ERROR_CHECK( esp_smartconfig_start(smart_config_callback) );
-    while (1) {
+    while (1) 
+    {
         uxBits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT | ESPTOUCH_DONE_BIT, true, false, portMAX_DELAY); 
         if(uxBits & CONNECTED_BIT) {
             ESP_LOGI(TAG, "Wifi connected");
