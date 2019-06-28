@@ -37,7 +37,7 @@ The unit of Frequency is Hz.
 ### List the functions that needs to be implemented.
 
 - Communicate with server by mqtt, thus the cummunitaion's link is recommended as follows: 
-	- [ ] SmartConfig(If you want to config wifi by smartconfig)
+	- [x] **SmartConfig**(It will be deployed when the chip first boots)
 	- [x] **WIFI**(required)
 	- [x] **MQTT**(required)
 
