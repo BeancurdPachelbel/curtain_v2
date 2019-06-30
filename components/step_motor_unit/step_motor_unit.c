@@ -23,7 +23,7 @@
 
 #define TIMER_DIVIDER         16  //  Hardware timer clock divider
 #define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to seconds
-#define TIMER_INTERVAL0_SEC   (0.0001) // sample test interval for the first timer
+#define TIMER_INTERVAL0_SEC   (0.00001) // sample test interval for the first timer
 #define TIMER_INTERVAL1_SEC   (1)   // sample test interval for the second timer
 #define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
 #define TEST_WITH_RELOAD      1        // testing will be done with auto reload
@@ -308,7 +308,7 @@ void stepper_task(void *arg)
         {
             ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
             vTaskSuspend(read_current_handle);
-            timer_count_max = 12;
+            timer_count_max = 120;
             is_runnable = true;
             set_is_just_running(true);
             direction = stepper_instance.direction;
@@ -317,7 +317,7 @@ void stepper_task(void *arg)
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
             stepper_event_group = xEventGroupCreate();
-            vTaskDelay( 50 / portTICK_RATE_MS);
+            vTaskDelay( 100 / portTICK_RATE_MS);
             // timer_count_max = 1;
             // vTaskDelay( 2000 / portTICK_RATE_MS);
             vTaskResume(read_current_handle);
@@ -385,11 +385,11 @@ void set_current_percentage()
     if (direction == 1)
     {
         //求出百分比，保留小数点后两位，再化为整数
-        current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
+        current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
     }
     else
     {
-        current_percentage = current_percentage + (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
+        current_percentage = current_percentage - (int)((((float)current_stepper_count / (float)all_stepper_count)+0.005)*100);
     }
 
     if (current_percentage > 100)
@@ -414,17 +414,17 @@ void send_stepper_run_task(int percentage)
 
     stepper_t stepper_instance;
     //运行到起点
-    if (percentage == 0)
+    if (percentage == 0 && current_percentage != 0)
     {
         position_status = START;
-        stepper_instance.direction = 1;
+        stepper_instance.direction = 0;
         stepper_instance.step_count = all_stepper_count * 10;
     }
     //运行到终点
-    else if (percentage == 100)
+    else if (percentage == 100 && current_percentage != 100)
     {
         position_status = END;
-        stepper_instance.direction = 0;
+        stepper_instance.direction = 1;
         stepper_instance.step_count = all_stepper_count * 10;
     }
     //运行到指定位置
@@ -440,14 +440,14 @@ void send_stepper_run_task(int percentage)
             ESP_LOGI(TAG, "相同的百分比，不需要旋转");
             return;
         }
-        //与当期的关闭百分比对比，如果大于当前的关闭比例，则往开启的方向旋转，小于当前开启比例则往关闭的方向旋转
+        //与当期的开启百分比对比，如果大于当前的开启比例，则往开启的方向旋转，小于当前开启比例则往关闭的方向旋转
         else if (current_percentage > percentage)
         {
-            stepper_instance.direction = 1;
+            stepper_instance.direction = 0;
         }
         else if (current_percentage < percentage)
         {
-            stepper_instance.direction = 0;
+            stepper_instance.direction = 1;
         }
         //将百分比换算成步进数
         stepper_instance.step_count = abs((int)((current_percentage_f - percentage_f) * all_stepper_count));
@@ -545,7 +545,7 @@ void curtain_track_travel_init()
     else
     {
         ESP_LOGI(TAG, "起点到终点的步进总数为%d", count);
-        current_percentage = 100;
+        current_percentage = 0;
         stepper_travel_group = xEventGroupCreate();
         stepper_t stepper_instance = {.direction = 1, .step_count = 5000};
         xQueueSend(start_queue, &stepper_instance, portMAX_DELAY);
