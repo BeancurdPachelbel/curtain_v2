@@ -308,7 +308,7 @@ void stepper_task(void *arg)
         {
             ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
             vTaskSuspend(read_current_handle);
-            timer_count_max = 120;
+            timer_count_max = 125;
             is_runnable = true;
             set_is_just_running(true);
             direction = stepper_instance.direction;
@@ -317,7 +317,7 @@ void stepper_task(void *arg)
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
             stepper_event_group = xEventGroupCreate();
-            vTaskDelay( 100 / portTICK_RATE_MS);
+            vTaskDelay( 200 / portTICK_RATE_MS);
             // timer_count_max = 1;
             // vTaskDelay( 2000 / portTICK_RATE_MS);
             vTaskResume(read_current_handle);

@@ -233,6 +233,7 @@ void read_current_task(void *arg)
 	float static_current_min = 60.0;
 	float static_current_max = 800.0;
 	vTaskDelay(2000 / portTICK_RATE_MS);
+	int detect_min_count = 0;
 	while(1)
 	{
 		current = ina219_getCurrent_mA();
@@ -247,9 +248,25 @@ void read_current_task(void *arg)
 			if (current > static_current_min)
 			{
 				ESP_LOGI(TAG, "当前手拉电流值为:%2.1lfmA\n", current);
-				//电机反转
-				stepper_reverse();
+				detect_min_count++;
+				if (detect_min_count == 3)
+				{
+					//电机反转
+					stepper_reverse();
+					detect_min_count = 0;
+				}
 			}
+			else
+			{
+				detect_min_count = 0;
+			}
+
+			// if (current > static_current_min)
+			// {
+			// 	ESP_LOGI(TAG, "当前手拉电流值为:%2.1lfmA\n", current);
+			// 	//电机反转
+			// 	stepper_reverse();
+			// }
 		}
 
 		if (static_current_max < current)
@@ -257,7 +274,7 @@ void read_current_task(void *arg)
 			ESP_LOGI(TAG, "当前电流值为:%2.1lfmA\n", current);
 			stop_running();
 		}
-		vTaskDelay(20 / portTICK_RATE_MS);
+		vTaskDelay(10 / portTICK_RATE_MS);
 	}
 }
 
