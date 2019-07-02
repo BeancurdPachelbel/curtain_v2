@@ -7,5 +7,6 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
+#include "driver/timer.h"
 
 #endif
