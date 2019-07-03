@@ -36,6 +36,7 @@
 #include "wifi_unit.h"
 #include "mqtt_unit.h"
 #include "nvs_unit.h"
+#include "ir_unit.h"
 
 #define TAG     "MAIN"
 
@@ -67,5 +68,8 @@ void app_main(void)
     
     //Initialize stepper motor
     stepper_init();
+
+    //Initialize infrared radiation
+    ir_init();
 
 }

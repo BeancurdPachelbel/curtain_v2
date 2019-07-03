@@ -9,4 +9,7 @@
 #include "freertos/event_groups.h"
 #include "driver/timer.h"
 
+//初始化红外
+void ir_init();
+
 #endif
