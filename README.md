@@ -49,6 +49,7 @@ The unit of Frequency is Hz.
 - wifi_unit
 - mqtt_unit
 - stepper_unit
+- ir_unit
 - main
 
 ### Delete redundant and unuseful code
