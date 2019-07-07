@@ -1,122 +1,226 @@
-#include "ir_unit.h"
+/* NEC remote infrared RMT example
 
-#define TIMER_DIVIDER         16  	//  Hardware timer clock divider
-#define TIMER_SCALE           (TIMER_BASE_CLK / TIMER_DIVIDER)  // convert counter value to seconds
-#define TIMER_INTERVAL0_SEC   (0.00001) // sample test interval for the first timer
-#define TIMER_INTERVAL1_SEC   (1)   // sample test interval for the second timer
-#define TEST_WITHOUT_RELOAD   0        // testing will be done without auto reload
-#define TEST_WITH_RELOAD      1        // testing will be done with auto reload
+   This example code is in the Public Domain (or CC0 licensed, at your option.)
 
-#define TAG	"IR"
+   Unless required by applicable law or agreed to in writing, this
+   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, either express or implied.
+*/
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "driver/rmt.h"
+#include "driver/periph_ctrl.h"
+#include "soc/rmt_reg.h"
+// #include "car_mp3_decode.h"
 
-//尝试使用RMT，不用RMT，辣鸡
+static const char* NEC_TAG = "NEC";
 
-//可尝试增加红外学习模式
+#define RMT_RX_ACTIVE_LEVEL  0   /*!< If we connect with a IR receiver, the data is active low */
 
-//通过定时器中断实现精确计时
-int timer1_count = 0;
-int timer1_count_max = 0;
-//定时器队列
-xQueueHandle timer_queue;
+#define RMT_RX_CHANNEL    0     /*!< RMT channel for receiver */
+#define RMT_RX_GPIO_NUM  4     /*!< GPIO number for receiver */
+#define RMT_CLK_DIV      100    /*!< RMT counter clock divider */
+#define RMT_TICK_10_US    (80000000/RMT_CLK_DIV/100000)   /*!< RMT counter value for 10 us.(Source clock is APB clock) */
 
-//定时器中断
-void IRAM_ATTR timer1_isr(void *arg)
+#define NEC_HEADER_HIGH_US    9000                         /*!< NEC protocol header: positive 9ms */
+#define NEC_HEADER_LOW_US     4500                         /*!< NEC protocol header: negative 4.5ms*/
+#define NEC_BIT_ONE_HIGH_US    560                         /*!< NEC protocol data bit 1: positive 0.56ms */
+#define NEC_BIT_ONE_LOW_US    (2250-NEC_BIT_ONE_HIGH_US)   /*!< NEC protocol data bit 1: negative 1.69ms */
+#define NEC_BIT_ZERO_HIGH_US   560                         /*!< NEC protocol data bit 0: positive 0.56ms */
+#define NEC_BIT_ZERO_LOW_US   (1120-NEC_BIT_ZERO_HIGH_US)  /*!< NEC protocol data bit 0: negative 0.56ms */
+#define NEC_BIT_END            560                         /*!< NEC protocol end: positive 0.56ms */
+#define NEC_BIT_MARGIN         150                         /*!< NEC parse margin time */
+
+#define NEC_ITEM_DURATION(d)  ((d & 0x7fff)*10/RMT_TICK_10_US)  /*!< Parse duration time from memory register value */
+#define NEC_DATA_ITEM_NUM   34  /*!< NEC code item number: header + 32bit data + end */
+#define rmt_item32_tIMEOUT_US  9500   /*!< RMT receiver timeout value(us) */
+
+
+/*
+ * @brief Check whether duration is around target_us
+ */
+inline bool nec_check_in_range(int duration_ticks, int target_us, int margin_us)
 {
-    timer1_count++;
-    //定时器精度为10us
-    if (timer1_count == timer1_count_max)
-    { 
-        timer1_count = 0;
-        xQueueSendFromISR(timer_queue, &timer1_count, NULL);
+    //ESP_LOGI(NEC_TAG, "nec_check_in_range - NEC_ITEM_DURATION = %d", NEC_ITEM_DURATION(duration_ticks));
+    if(( NEC_ITEM_DURATION(duration_ticks) < (target_us + margin_us))
+        && ( NEC_ITEM_DURATION(duration_ticks) > (target_us - margin_us))) {
+        return true;
+    } else {
+        return false;
     }
+}
 
-    int timer_idx = (int) arg;
-    //从定时器报告的中断中，获取中断状态以及计数器值
-    //uint32_t intr_status = TIMERG1.int_st_timers.val;
-    TIMERG1.hw_timer[timer_idx].update = 1;
-    uint64_t timer_counter_value = ((uint64_t) TIMERG1.hw_timer[timer_idx].cnt_high) << 32 | TIMERG1.hw_timer[timer_idx].cnt_low;
-    //为定时器（没有reload的情况下）清除中断以及更新警报时间
-    //定时器Reload就是不累计时间，不Reload就是累计时间
-    //比如设定时间为1s，则Reload的定时器每次到了1s之后就会重新开始计时，不Reload的定时器则会一直计时下去
-    //Reload: 0s, 1s, 0s, 1s, 0s, 1s, ...
-    //Without Reload: 0s, 1s, 2s, 3s, ...
-    TIMERG1.int_clr_timers.t0 = 1;
-    timer_counter_value += (uint64_t) (TIMER_INTERVAL0_SEC * TIMER_SCALE);
-    TIMERG1.hw_timer[timer_idx].alarm_high = (uint32_t) (timer_counter_value >> 32);
-    TIMERG1.hw_timer[timer_idx].alarm_low = (uint32_t) timer_counter_value;
-    //在警报触发之后，需要重新启用它，以便下次能够再触发
-    TIMERG1.hw_timer[timer_idx].config.alarm_en = TIMER_ALARM_EN;
+/*
+ * @brief Check whether this value represents an NEC header
+ */
+static bool nec_header_if(rmt_item32_t* item)
+{
+    if((item->level0 == RMT_RX_ACTIVE_LEVEL && item->level1 != RMT_RX_ACTIVE_LEVEL)
+        && nec_check_in_range(item->duration0, NEC_HEADER_HIGH_US, NEC_BIT_MARGIN)
+        && nec_check_in_range(item->duration1, NEC_HEADER_LOW_US, NEC_BIT_MARGIN)) {
+        return true;
+    }
+    return false;
+}
+
+/*
+ * @brief Check whether this value represents an NEC data bit 1
+ */
+static bool nec_bit_one_if(rmt_item32_t* item)
+{
+    if((item->level0 == RMT_RX_ACTIVE_LEVEL && item->level1 != RMT_RX_ACTIVE_LEVEL)
+        && nec_check_in_range(item->duration0, NEC_BIT_ONE_HIGH_US, NEC_BIT_MARGIN)
+        && nec_check_in_range(item->duration1, NEC_BIT_ONE_LOW_US, NEC_BIT_MARGIN)) {
+        return true;
+    }
+    return false;
+}
+
+/*
+ * @brief Check whether this value represents an NEC data bit 0
+ */
+static bool nec_bit_zero_if(rmt_item32_t* item)
+{
+    if((item->level0 == RMT_RX_ACTIVE_LEVEL && item->level1 != RMT_RX_ACTIVE_LEVEL)
+        && nec_check_in_range(item->duration0, NEC_BIT_ZERO_HIGH_US, NEC_BIT_MARGIN)
+        && nec_check_in_range(item->duration1, NEC_BIT_ZERO_LOW_US, NEC_BIT_MARGIN)) {
+        return true;
+    }
+    return false;
+}
+
+
+/*
+ * @brief Parse NEC 32 bit waveform to address and command.
+ */
+static int nec_parse_items(rmt_item32_t* item, int item_num, uint16_t* addr, uint16_t* data)
+{
+    int w_len = item_num;
+    if(w_len < NEC_DATA_ITEM_NUM) {
+        return -1;
+    }
+    int i = 0, j = 0;
+
+    if(!nec_header_if(item++)) {
+        ESP_LOGE(NEC_TAG, "nec_parse_items - HEADER KO");
+        item--;
+        for(i=0; i<item_num; i++)
+            ESP_LOGI(NEC_TAG, "nec_parse_items - item[%d]: %dus@%d - %dus@%d",
+                    i,
+                    NEC_ITEM_DURATION(item[i].duration0),
+                    NEC_ITEM_DURATION(item[i].level0),
+                    NEC_ITEM_DURATION(item[i].duration1),
+                    NEC_ITEM_DURATION(item[i].level1));
+
+        return -1;
+    }
+    uint16_t addr_t = 0;
+    for(j = 0; j < 16; j++) {
+        if(nec_bit_one_if(item)) {
+            //ESP_LOGI(NEC_TAG, "nec_parse_items - [%d] is LOGICAL 1", i);
+            addr_t |= (1 << j);
+        } else if(nec_bit_zero_if(item)) {
+            //ESP_LOGI(NEC_TAG, "nec_parse_items - [%d] is LOGICAL 0", i);
+            addr_t |= (0 << j);
+        } else {
+            //ESP_LOGE(NEC_TAG, "nec_parse_items - [%d] is LOGICAL 0", i);
+            return -1;
+        }
+        item++;
+        i++;
+    }
+    uint16_t data_t = 0;
+    for(j = 0; j < 16; j++) {
+        if(nec_bit_one_if(item)) {
+            data_t |= (1 << j);
+        } else if(nec_bit_zero_if(item)) {
+            data_t |= (0 << j);
+        } else {
+            return -1;
+        }
+        item++;
+        i++;
+    }
+    *addr = addr_t;
+    *data = data_t;
+    return i;
+}
+
+
+/*
+ * @brief RMT receiver initialization
+ */
+static void nec_rx_init()
+{
+    rmt_config_t rmt_rx;
+    rmt_rx.channel = RMT_RX_CHANNEL;
+    rmt_rx.gpio_num = RMT_RX_GPIO_NUM;
+    rmt_rx.clk_div = RMT_CLK_DIV;
+    rmt_rx.mem_block_num = 1;
+    rmt_rx.rmt_mode = RMT_MODE_RX;
+    rmt_rx.rx_config.filter_en = true;
+    rmt_rx.rx_config.filter_ticks_thresh = 100;
+    rmt_rx.rx_config.idle_threshold = rmt_item32_tIMEOUT_US / 10 * (RMT_TICK_10_US);
+    rmt_config(&rmt_rx);
+    rmt_driver_install(rmt_rx.channel, 1000, 0);
 }
 
 /**
- * 初始化定时器
- * @param timer_idx          定时器序号
- * @param auto_reload        定时器是否重载
- *                           重载不累计时间
- *                           不重载就一直累计时间
- * @param timer_interval_sec 时间精度（不是中断的精度）
+ * @brief RMT receiver demo, this task will print each received NEC data.
+ *
  */
-void timer_init_with_timer1(int timer_idx, bool auto_reload, double timer_interval_sec)
+static void rmt_example_nec_rx_task()
 {
-    //初始化定时器参数
-    timer_config_t config;
-    config.divider = TIMER_DIVIDER;
-    config.counter_dir = TIMER_COUNT_UP;
-    config.counter_en = TIMER_PAUSE;
-    config.alarm_en = TIMER_ALARM_EN;
-    config.intr_type = TIMER_INTR_LEVEL;
-    config.auto_reload = auto_reload;
-    timer_init(TIMER_GROUP_1, timer_idx, &config);
-
-    //定时器的计数器将会从以下的数值开始计数，同时，如果auto_reload设置了，这个值会重新在警报上装载
-    timer_set_counter_value(TIMER_GROUP_1, timer_idx, 0x00000000ULL);
-
-    //配置警报值以及警报的中断
-    timer_set_alarm_value(TIMER_GROUP_1, timer_idx, timer_interval_sec * TIMER_SCALE);
-    timer_enable_intr(TIMER_GROUP_1, timer_idx);
-    timer_isr_register(TIMER_GROUP_1, timer_idx, timer1_isr, (void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
-
-    //timer_start(TIMER_GROUP_0, timer_idx);
+    int channel = RMT_RX_CHANNEL;
+    nec_rx_init();
+    RingbufHandle_t rb = NULL;
+    //get RMT RX ringbuffer
+    rmt_get_ringbuf_handle(channel, &rb);
+    rmt_rx_start(channel, 1);
+    while(rb) {
+        size_t rx_size = 0;
+        //try to receive data from ringbuffer.
+        //RMT driver will push all the data it receives to its ringbuffer.
+        //We just need to parse the value and return the spaces of ringbuffer.
+        rmt_item32_t* item = (rmt_item32_t*) xRingbufferReceive(rb, &rx_size, 1000);
+        //ESP_LOGI(NEC_TAG, "RMT RCV --- xRingbufferReceive: item=%p size=%d", item, rx_size);
+        if(item) {
+            uint16_t rmt_addr;
+            uint16_t rmt_cmd;
+            int offset = 0;
+            while(1) {
+                //parse data value from ringbuffer.
+                int res = nec_parse_items(item + offset, rx_size / 4 - offset, &rmt_addr, &rmt_cmd);
+                if(res > 0) {
+                    offset += res + 1;
+                    ESP_LOGI(NEC_TAG, "RMT RCV --- addr: 0x%04x cmd: 0x%04x", rmt_addr, rmt_cmd);
+                    // car_mp3_decode_btn(rmt_addr, rmt_cmd);
+                } else {
+                    break;
+                }
+            }
+            //after parsing the data, return spaces to ringbuffer.
+            vRingbufferReturnItem(rb, (void*) item);
+        } else {
+            //ESP_LOGI(NEC_TAG, "RMT RCV --- Timeout");
+            //break;
+        }
+    }
+    vTaskDelete(NULL);
 }
 
-//初始化红外
 void ir_init()
 {
-	timer1_count_max = 100000;
-	timer_queue = xQueueCreate(10, sizeof(int));
-	//初始化定时器1
-	timer_init_with_timer1(TIMER_0, false, TIMER_INTERVAL0_SEC);
-	int i = 0;
-	//启动定时器1
-	timer_start(TIMER_GROUP_1, TIMER_0);
-	while(1)
-	{
-		if(xQueueReceive(timer_queue, &i, portMAX_DELAY))
-		{
-			ESP_LOGI(TAG, "%ds时间到", (int)(timer1_count_max*TIMER_INTERVAL0_SEC));
-		}
-	}
+	xTaskCreate(rmt_example_nec_rx_task, "rmt_nec_rx_task", 2048, NULL, 10, NULL);
 }
 
-/**
- * 红外编码解释
- * 引导码+四个字节
- * 1.用户码
- * 2.用户码反码
- * 3.键码
- * 4.键码反码
- */
-
-/**
- * 红外接收解码逻辑
- * 1.低电平的时间为9ms
- * 2.高电平的时间为4.5ms
- * 3.循环接收4个字节
- * 	3.1循环接收8个位
- * 	3.2低电平的时间为560us，为0
- * 	3.3高电平的时间为560us
- * 		3.3.1高电平的时间为1680us，为1
- * 	3.4接收一位，回到步骤3.1
- * 4.4个字节接收完毕
- */
-
+// void app_main()
+// {
+//     xTaskCreate(rmt_example_nec_rx_task, "rmt_nec_rx_task", 2048, NULL, 10, NULL);
+// }
