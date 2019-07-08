@@ -296,6 +296,20 @@ int get_current_stepper_count()
     return current_stepper_count;
 }
 
+//加速步进电机任务，仅调节转速，不影响实际步进的位置
+void accelerate_stepper_task(void *arg)
+{
+    ESP_LOGI(TAG, "步进电机启动加速");
+    timer_count_max = 200;
+    //预期加速完的速度timer_count_max为120
+    for (int i = 0; i < 80 ; i++)
+    {
+        timer_count_max--;
+        vTaskDelay( 2 / portTICK_RATE_MS);
+    }
+    vTaskDelete(NULL);
+}
+
 //步进电机任务
 void stepper_task(void *arg)
 {
