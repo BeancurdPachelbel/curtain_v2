@@ -17,14 +17,15 @@
 #include "driver/rmt.h"
 #include "driver/periph_ctrl.h"
 #include "soc/rmt_reg.h"
-// #include "car_mp3_decode.h"
+#include "step_motor_unit.h"
 
 static const char* NEC_TAG = "NEC";
 
 #define RMT_RX_ACTIVE_LEVEL  0   /*!< If we connect with a IR receiver, the data is active low */
 
 #define RMT_RX_CHANNEL    0     /*!< RMT channel for receiver */
-#define RMT_RX_GPIO_NUM  4     /*!< GPIO number for receiver */
+//The GPIO NUM is RX2
+#define RMT_RX_GPIO_NUM  16     /*!< GPIO number for receiver */
 #define RMT_CLK_DIV      100    /*!< RMT counter clock divider */
 #define RMT_TICK_10_US    (80000000/RMT_CLK_DIV/100000)   /*!< RMT counter value for 10 us.(Source clock is APB clock) */
 
@@ -108,15 +109,15 @@ static int nec_parse_items(rmt_item32_t* item, int item_num, uint16_t* addr, uin
     int i = 0, j = 0;
 
     if(!nec_header_if(item++)) {
-        ESP_LOGE(NEC_TAG, "nec_parse_items - HEADER KO");
-        item--;
-        for(i=0; i<item_num; i++)
-            ESP_LOGI(NEC_TAG, "nec_parse_items - item[%d]: %dus@%d - %dus@%d",
-                    i,
-                    NEC_ITEM_DURATION(item[i].duration0),
-                    NEC_ITEM_DURATION(item[i].level0),
-                    NEC_ITEM_DURATION(item[i].duration1),
-                    NEC_ITEM_DURATION(item[i].level1));
+        // ESP_LOGE(NEC_TAG, "nec_parse_items - HEADER KO");
+        // item--;
+        // for(i=0; i<item_num; i++)
+        //     ESP_LOGI(NEC_TAG, "nec_parse_items - item[%d]: %dus@%d - %dus@%d",
+        //             i,
+        //             NEC_ITEM_DURATION(item[i].duration0),
+        //             NEC_ITEM_DURATION(item[i].level0),
+        //             NEC_ITEM_DURATION(item[i].duration1),
+        //             NEC_ITEM_DURATION(item[i].level1));
 
         return -1;
     }
@@ -171,6 +172,28 @@ static void nec_rx_init()
     rmt_driver_install(rmt_rx.channel, 1000, 0);
 }
 
+void check_ir_receive_data(uint16_t rmt_cmd)
+{
+	switch(rmt_cmd)
+	{
+		case 0x6699:
+			ESP_LOGI(NEC_TAG, "open the curtain");
+			send_stepper_run_task(100);
+			break;
+		case 0x3ec1:
+			ESP_LOGI(NEC_TAG, "close the curtain");
+			send_stepper_run_task(0);
+			break;
+		case 0x31ce:
+			ESP_LOGI(NEC_TAG, "stop the curtain");
+			stop_running();
+			break;
+		default:
+			break;
+	}
+}
+
+
 /**
  * @brief RMT receiver demo, this task will print each received NEC data.
  *
@@ -200,7 +223,7 @@ static void rmt_example_nec_rx_task()
                 if(res > 0) {
                     offset += res + 1;
                     ESP_LOGI(NEC_TAG, "RMT RCV --- addr: 0x%04x cmd: 0x%04x", rmt_addr, rmt_cmd);
-                    // car_mp3_decode_btn(rmt_addr, rmt_cmd);
+                    check_ir_receive_data(rmt_cmd);
                 } else {
                     break;
                 }

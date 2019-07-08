@@ -300,12 +300,12 @@ int get_current_stepper_count()
 void accelerate_stepper_task(void *arg)
 {
     ESP_LOGI(TAG, "步进电机启动加速");
-    timer_count_max = 200;
+    timer_count_max = 150;
     //预期加速完的速度timer_count_max为120
-    for (int i = 0; i < 80 ; i++)
+    for (int i = 0; i < 30 ; i++)
     {
-        timer_count_max--;
-        vTaskDelay( 2 / portTICK_RATE_MS);
+        timer_count_max-=1;
+        vTaskDelay( 20 / portTICK_RATE_MS);
     }
     vTaskDelete(NULL);
 }
@@ -322,7 +322,8 @@ void stepper_task(void *arg)
         {
             ESP_LOGI(TAG, "步进电机开始旋转，旋转的方向:%d, 步进次数:%d", stepper_instance.direction, stepper_instance.step_count);
             vTaskSuspend(read_current_handle);
-            timer_count_max = 125;
+            xTaskCreate(accelerate_stepper_task, "accelerate_stepper_task", 1024*2, NULL, 6, NULL);
+            // timer_count_max = 125;
             is_runnable = true;
             set_is_just_running(true);
             direction = stepper_instance.direction;
@@ -331,7 +332,7 @@ void stepper_task(void *arg)
             timer_start(TIMER_GROUP_0, 0);
             //ESP_LOGI(TAG, "定时器启动");
             stepper_event_group = xEventGroupCreate();
-            vTaskDelay( 200 / portTICK_RATE_MS);
+            vTaskDelay( 500 / portTICK_RATE_MS);
             // timer_count_max = 1;
             // vTaskDelay( 2000 / portTICK_RATE_MS);
             vTaskResume(read_current_handle);
