@@ -231,7 +231,7 @@ void read_current_task(void *arg)
 	ESP_LOGI(TAG, "检测电流值任务");
 	float current;
 	float static_current_min = 60.0;
-	float static_current_max = 750.0;
+	float static_current_max = 800.0;
 	vTaskDelay(2000 / portTICK_RATE_MS);
 	int detect_min_count = 0;
 	while(1)
