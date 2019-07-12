@@ -50,6 +50,7 @@ The unit of Frequency is Hz.
 - mqtt_unit
 - stepper_unit
 - ir_unit
+- ota_unit
 - main
 
 ### Delete redundant and unuseful code
