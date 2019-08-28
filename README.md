@@ -7,7 +7,7 @@ The range of the motor's speed is from 30RPM to 150RPM, converts into frequency 
 
 Accelerate the stepper, create a new task to change the value, update the readme
 
-will add hall sensor support, seems much more stable， dual head stepper
+will add hall sensor support, seems much more stable， dual head stepper。 
 
 ## About the Project
 Coming soon...
